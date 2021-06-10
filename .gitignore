@@ -1,0 +1,9 @@
+# Artifacts
+outputs/
+out/
+
+# Non versioned code
+scripts/
+
+# Executables
+mill
