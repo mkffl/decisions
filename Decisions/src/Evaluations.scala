@@ -3,63 +3,126 @@ import plotly._, element._, layout._, Plotly._
 import collection.JavaConverters._
 import be.cylab.java.roc.Roc
 import scala.util
+import com.github.sanity.pav.PairAdjacentViolators._
+import com.github.sanity.pav._
 import smile.classification._
 import smile.math.MathEx.{logistic, min}
 
-// An ErrorEstimator object stores all metrics for a pair of recognizer/calibrator
+
+/*
+case class ErrorEstimator(
+    val scores: Vector[Double],
+    val labels: Vector[Int],
+    val priorLogOdds: Vector[Double],
+    val recognizer: String,
+    val calibrator: String,
+    val score: Vector[Double]
+)
+*/
+
+/*
+Every error estimator needs a logodds to probability converter
+Optimal errors need convex hull coordinates to make calculation more efficient
+Observed errors use the steppy curve to compute the observed bayes error rates
+
+The curve is the latent representation; a representation of the classifier in the 
+(pFa, pMiss space). The observed errors don't explicitly compute the operating points
+from the scores but do compute them from the prior log-odds (equivalent??)
+*/
 trait ErrorEstimator {
-    // add a forall check for the vector lengths
-    val scores: Vector[Double]
-    val labels: Vector[Int]
-    val priorLogOdds: Vector[Double]
-    val recognizer: String
-    val calibrator: String
-    val name: String
-    def summary: String = s"$name using $recognizer and $calibrator."
-
+    def logoddsToProbability(priorLogOdds: Vector[Double]): Vector[Vector[Double]] = {
+        val pTar: Vector[Double] = priorLogOdds.map(logistic)    
+        val pNon: Vector[Double] = priorLogOdds.map(x => -logistic(x))
+        Vector(pTar, pNon)
+    }
+    def bayesErrorRate: Vector[Double]
 }
 
-class Observed(val scores: Vector[Double],
-    val labels: Vector[Int],
-    val priorLogOdds: Vector[Double],
-    val recognizer: String,
-    val calibrator: String    
-) extends ErrorEstimator {
-    val name = "Observed Bayes Error rate"
-    def observed: Vector[Double] = utils.observedBER(scores, labels, priorLogOdds)
+class SteppyCurve(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ErrorEstimator {
+        val (pTar, pNon) = utils.oddsToProba(priorLogOdds) // TODO: use parent method MISTAKE
+        val (pMiss, pFa) = utils.pMisspFaPoints(scores, labels, priorLogOdds)
+        
+        def bayesErrorRate = for ((((pTar,pMiss),pNon),pFa) <- (pTar zip pMiss zip pNon zip pFa) ) yield pTar * pMiss + pNon * pFa
+        def majorityErrorRate = for ((ptar, pnon) <- pTar zip pNon) yield min(ptar, pnon,100.0) // Smile's min method needs 3 or more inputs        
 }
 
-class Majority(val scores: Vector[Double],
-    val labels: Vector[Int],
-    val priorLogOdds: Vector[Double],
-    val recognizer: String,
-    val calibrator: String    
-) extends ErrorEstimator {
-    val name = "Majority classifier error rate"
-    def majority: Vector[Double] = utils.majorityErrorRate(scores, labels, priorLogOdds)
-}    
-
-class Optimal(val scores: Vector[Double],
-    val labels: Vector[Int],
-    val priorLogOdds: Vector[Double],
-    val recognizer: String,
-    val calibrator: String    
-) extends ErrorEstimator {
-    val name = "Optimal Bayes error rate"
-    def optimal: Vector[Double] = ???
+trait ConvexHull extends ErrorEstimator {
+    def convexHullCoordinates: Vector[Vector[Double]]
 }
 
-class EER(val scores: Vector[Double],
-    val labels: Vector[Int],
-    val priorLogOdds: Vector[Double],
-    val recognizer: String,
-    val calibrator: String    
-) extends ErrorEstimator {
-    val name = "Expected Error Rate"
-    def EER: Vector[Double] = ???
+class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ConvexHull {
+    private def countTargets: Vector[Int] =
+        pavFit.bins.map{case po: Point => po.getWeight.toDouble * po.getY toInt}
+            .toVector
+
+    private def countNonTargets: Vector[Int] =
+        targets.zip(pavFit.bins).map{case (count,po) =>  (po.getWeight - count).toInt}
+              .toVector
+
+    val pavFit = new utils.PairAdjacentViolatorsWrapper(scores, labels)
+    val nbins = pavFit.bins.size
+    val targets = countTargets
+    val nonTars = countNonTargets
+    val T = targets.reduce(_ + _)
+    val N = nonTars.reduce(_ + _)
+
+    def convexHullCoordinates: Vector[Vector[Double]] = {
+        val pmiss = targets.scanLeft(0)(_ + _).map{_ / T.toDouble}
+        val pfa = nonTars.scanLeft(0)(_ + _).map{1 - _ / N.toDouble}
+        Vector(pmiss, pfa)
+    }
+
+    val PP = logoddsToProbability(priorLogOdds)
+    val pMisspFa = convexHullCoordinates
+
+    def bayesErrorRate: Vector[Double] = {
+        val E = utils.matMul(PP, pMisspFa)
+        val ber = E.minBy(identity)
+        Vector(2,3) //ber
+    }
+    def EER = ???
 }
+
+/*
+Usage
+val scores = ...
+val labels = ...
+val steppy = SteppyCurve(scores, labels, plo)
+val hull = ConvexHull(scores, labels, plo)
+// note: ER means Error Rate
+val expectedER = hull.EER
+val optimalBayesER = hull.bayesErrorRate
+val observedBayesER = steppy.bayesErrorRate
+val majorityER = steppy.majorityErrorRate
+
+push to APEs:
+ErrorEstimator(plo, expectedER, 'EER', recognizer, calibrator)
+
+
+*/
+
+
 
 object utils {
+    /*  - Method to get the PAV bins, i.e. the PAV-merged points.
+        - Handle kotlin to scala type conversion to hide it from the main PAV class.
+    */
+    class PairAdjacentViolatorsWrapper(val scores: Vector[Double], val labels: Vector[Int]) {
+        def vecToPoints(x: Vector[Double], y: Vector[Int]): Vector[Point] =
+            x.zip(y).map{case (x,y) => new Point(x,y)}
+        
+        def getBins = pav.getIsotonicPoints.asScala.toVector
+        
+        val inputPoints = vecToPoints(scores,labels).toIterable.asJava
+        val pav = new PairAdjacentViolators(inputPoints)
+        val bins: Vector[Point] = getBins
+    }
+
+    type Row = Vector[Double]
+    type Matrix = Vector[Vector[Double]]
+
+    def matMul(A: Matrix, B: Matrix) = (A.transpose) zip (B.transpose) map{case (a:Row, b:Row) => a(0)*b(0) + a(1)*b(1)}
+
     def ordinalRank(arr: Seq[Double]): Seq[Int] = {
         val withIndices = arr.zipWithIndex
         val valueSorted = withIndices.sortBy(_._1)
@@ -91,7 +154,7 @@ object utils {
     
     def oddsToProba(priorLogOdds: Vector[Double]): Tuple2[Vector[Double], Vector[Double]] = {
         val pTar: Vector[Double] = priorLogOdds.map(logistic)
-        val pNon: Vector[Double] = priorLogOdds.map(x => -logistic(x))
+        val pNon: Vector[Double] = priorLogOdds.map(x => logistic(-x))
         (pTar, pNon)
     }
 
