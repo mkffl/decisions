@@ -8,6 +8,34 @@ import com.github.sanity.pav._
 import smile.classification._
 import smile.math.MathEx.{logistic, min}
 
+object LinAlgebra {
+    // TODO: find out how to use package objects 
+    type Row = Vector[Double]
+    type Matrix = Vector[Vector[Double]]
+
+    def Row(xs: Int*) = Vector(xs: _*)
+    def Matrix(xs: Row*) = Vector(xs: _*)
+
+    implicit def intToDouble(mat: Vector[Vector[Int]]): Matrix = 
+        for (row <- mat) 
+            yield for (value <- row) 
+                yield value.toDouble
+    
+    implicit def floatToDoubleRow(row: Vector[Float]): Row = 
+        for (value <- row)
+                yield value.toDouble
+
+    def matMul(A: Matrix, B: Matrix) = {
+        for (row <- A)
+        yield for(col <- B.transpose)
+            yield row zip col map Function.tupled(_*_) reduceLeft (_+_)
+    }
+
+    def dotProduct(A: Matrix, B: Matrix) = {
+        for ( (rowA, rowB) <- A zip B)
+        yield rowA zip rowB map Function.tupled(_*_) reduceLeft (_+_)
+    }
+}
 
 /*
 case class ErrorEstimator(
@@ -20,6 +48,7 @@ case class ErrorEstimator(
 )
 */
 
+
 /*
 Every error estimator needs a logodds to probability converter
 Optimal errors need convex hull coordinates to make calculation more efficient
@@ -30,20 +59,26 @@ The curve is the latent representation; a representation of the classifier in th
 from the scores but do compute them from the prior log-odds (equivalent??)
 */
 trait ErrorEstimator {
-    def logoddsToProbability(priorLogOdds: Vector[Double]): Vector[Vector[Double]] = {
-        val pTar: Vector[Double] = priorLogOdds.map(logistic)    
-        val pNon: Vector[Double] = priorLogOdds.map(x => -logistic(x))
+    import LinAlgebra._
+
+    def logoddsToProbability(priorLogOdds: Row): Matrix = {
+        val pTar: Row = priorLogOdds.map(logistic)    
+        val pNon: Row = priorLogOdds.map(x => logistic(-x))
         Vector(pTar, pNon)
     }
-    def bayesErrorRate: Vector[Double]
+    def bayesErrorRate: Row
 }
 
 class SteppyCurve(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ErrorEstimator {
-        val (pTar, pNon) = utils.oddsToProba(priorLogOdds) // TODO: use parent method MISTAKE
-        val (pMiss, pFa) = utils.pMisspFaPoints(scores, labels, priorLogOdds)
-        
-        def bayesErrorRate = for ((((pTar,pMiss),pNon),pFa) <- (pTar zip pMiss zip pNon zip pFa) ) yield pTar * pMiss + pNon * pFa
-        def majorityErrorRate = for ((ptar, pnon) <- pTar zip pNon) yield min(ptar, pnon,100.0) // Smile's min method needs 3 or more inputs        
+        import LinAlgebra._
+
+        val PP = logoddsToProbability(priorLogOdds).transpose
+        //val (pMiss, pFa) = utils.pMisspFaPoints(scores, labels, priorLogOdds)
+        //val pMisspFa = Vector(pMiss, pFa).transpose
+        val pMisspFa = utils.pMisspFaPoints(scores, labels, priorLogOdds).transpose
+
+        def bayesErrorRate = dotProduct(PP, pMisspFa) //dot product or 'dotProductSum?'
+        def majorityErrorRate = PP.map(row => row.min)
 }
 
 trait ConvexHull extends ErrorEstimator {
@@ -51,6 +86,7 @@ trait ConvexHull extends ErrorEstimator {
 }
 
 class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ConvexHull {
+    import LinAlgebra._
     private def countTargets: Vector[Int] =
         pavFit.bins.map{case po: Point => po.getWeight.toDouble * po.getY toInt}
             .toVector
@@ -76,8 +112,8 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
     val pMisspFa = convexHullCoordinates
 
     def bayesErrorRate: Vector[Double] = {
-        val E = utils.matMul(PP, pMisspFa)
-        val ber = E.minBy(identity)
+        val E = matMul(PP, pMisspFa)
+        //val ber = E.minBy(identity)
         Vector(2,3) //ber
     }
     def EER = ???
@@ -104,6 +140,7 @@ ErrorEstimator(plo, expectedER, 'EER', recognizer, calibrator)
 
 
 object utils {
+    import LinAlgebra._
     /*  - Method to get the PAV bins, i.e. the PAV-merged points.
         - Handle kotlin to scala type conversion to hide it from the main PAV class.
     */
@@ -118,11 +155,6 @@ object utils {
         val bins: Vector[Point] = getBins
     }
 
-    type Row = Vector[Double]
-    type Matrix = Vector[Vector[Double]]
-
-    def matMul(A: Matrix, B: Matrix) = (A.transpose) zip (B.transpose) map{case (a:Row, b:Row) => a(0)*b(0) + a(1)*b(1)}
-
     def ordinalRank(arr: Seq[Double]): Seq[Int] = {
         val withIndices = arr.zipWithIndex
         val valueSorted = withIndices.sortBy(_._1)
@@ -131,7 +163,7 @@ object utils {
         for((valueAndIndexTuple, rank) <- indexSorted) yield rank + 1
     }
 
-    def pMisspFaPoints(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]): Tuple2[Vector[Double], Vector[Double]] = {
+    def pMisspFaPoints(scores: Row, labels: Vector[Int], priorLogOdds: Row): Matrix = {
         val thr = priorLogOdds.map(-1 * _)
         // TODO: data class with positive and negative types
         val tar = scores.zip(labels).filter(_._2==1).map(_._1)
@@ -149,28 +181,8 @@ object utils {
         val rk2 = ordinalRank((thr ++ non).map(_.toDouble))
         val rkD2 = rk2.take(D)
         val pFa = for ((r,v) <- rkD2 zip DdownTo1) yield (N - r.toFloat + v) / N
-        (pMiss.map(_.toDouble).toVector, pFa.map(_.toDouble).toVector)
-    }
-    
-    def oddsToProba(priorLogOdds: Vector[Double]): Tuple2[Vector[Double], Vector[Double]] = {
-        val pTar: Vector[Double] = priorLogOdds.map(logistic)
-        val pNon: Vector[Double] = priorLogOdds.map(x => logistic(-x))
-        (pTar, pNon)
-    }
-
-    // TODO: unit test against PYLLR results
-    def observedBER(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) = {
-        val (pTar, pNon) = oddsToProba(priorLogOdds)
-        val (pMiss, pFa) = pMisspFaPoints(scores, labels, priorLogOdds)
-        val ber = for ((((pTar,pMiss),pNon),pFa) <- (pTar zip pMiss zip pNon zip pFa) ) yield pTar * pMiss + pNon * pFa
-        ber
-    }
-
-    def majorityErrorRate(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) = {
-        val (pTar, pNon) = oddsToProba(priorLogOdds)
-        val (pMiss, pFa) = pMisspFaPoints(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double])
-        val majority = for ((ptar, pnon) <- pTar zip pNon) yield min(ptar, pnon,100.0) // Smile's min method needs 3 or more inputs
-        majority
+        //(pMiss.map(_.toDouble).toVector, pFa.map(_.toDouble).toVector)
+        Vector(pMiss.toVector, pFa.toVector)
     }
 }
 
