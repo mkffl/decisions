@@ -25,9 +25,13 @@ object LinAlgebra {
         for (value <- row)
                 yield value.toDouble
 
+    /* Matrix product operation
+    If matrix A is (m,n) and B is (n,p) then output is (m,p)
+    Input matrices must be (m,n) and (n,p).
+    */
     def matMul(A: Matrix, B: Matrix) = {
-        for (row <- A)
-        yield for(col <- B.transpose)
+        for (row <- A) // (m,n)
+        yield for(col <- B.transpose) // rotate to (p,n) to loop thru the cols
             yield row zip col map Function.tupled(_*_) reduceLeft (_+_)
     }
 
@@ -73,11 +77,8 @@ class SteppyCurve(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vec
         import LinAlgebra._
 
         val PP = logoddsToProbability(priorLogOdds).transpose
-        //val (pMiss, pFa) = utils.pMisspFaPoints(scores, labels, priorLogOdds)
-        //val pMisspFa = Vector(pMiss, pFa).transpose
         val pMisspFa = utils.pMisspFaPoints(scores, labels, priorLogOdds).transpose
-
-        def bayesErrorRate = dotProduct(PP, pMisspFa) //dot product or 'dotProductSum?'
+        def bayesErrorRate = dotProduct(PP, pMisspFa) //dot product or 'dotProductSum'?
         def majorityErrorRate = PP.map(row => row.min)
 }
 
@@ -87,6 +88,7 @@ trait ConvexHull extends ErrorEstimator {
 
 class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ConvexHull {
     import LinAlgebra._
+
     private def countTargets: Vector[Int] =
         pavFit.bins.map{case po: Point => po.getWeight.toDouble * po.getY toInt}
             .toVector
@@ -112,32 +114,12 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
     val pMisspFa = convexHullCoordinates
 
     def bayesErrorRate: Vector[Double] = {
-        val E = matMul(PP, pMisspFa)
-        //val ber = E.minBy(identity)
-        Vector(2,3) //ber
+        val E = matMul(PP.transpose, pMisspFa)
+        val ber = for (rate <- E) yield rate.min
+        ber
     }
     def EER = ???
 }
-
-/*
-Usage
-val scores = ...
-val labels = ...
-val steppy = SteppyCurve(scores, labels, plo)
-val hull = ConvexHull(scores, labels, plo)
-// note: ER means Error Rate
-val expectedER = hull.EER
-val optimalBayesER = hull.bayesErrorRate
-val observedBayesER = steppy.bayesErrorRate
-val majorityER = steppy.majorityErrorRate
-
-push to APEs:
-ErrorEstimator(plo, expectedER, 'EER', recognizer, calibrator)
-
-
-*/
-
-
 
 object utils {
     import LinAlgebra._

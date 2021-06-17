@@ -40,20 +40,26 @@ object helper {
         (scores, labels)
     }
 
-    val steppyBer = Vector(0.11920292, 0.18242552, 0.26894142, 0.01937754, 0.5,        0.37754067, 0.26894142, 0.18242552, 0.11920292)
+    val steppyBer = Vector(0.11920292, 0.18242552, 0.26894142, 0.01937754, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
+    val steppyMajorityErrorRate = Vector(0.11920292, 0.18242552, 0.26894142, 0.37754067, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
 }
 
 object EvaluationsTests extends TestSuite with TestHelper{
   def tests = Tests {
-    test("steppyBER") {
-      val (scores, labels) = helper.gaussianScores
-      val ploRange: Vector[Double] = (BigDecimal(-2.0) to BigDecimal(2.0) by 0.5).map(_.toDouble).toVector
-      val steppy = new SteppyCurve(scores, labels, ploRange)
-      val expected = helper.steppyBer
-      val result = steppy.bayesErrorRate
-      assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size) //TODO: add a shouldBeApprox method
+    val (scores, labels) = helper.gaussianScores
+    val ploRange: Vector[Double] = (BigDecimal(-2.0) to BigDecimal(2.0) by 0.5).map(_.toDouble).toVector
+    val steppy = new SteppyCurve(scores, labels, ploRange)
+        test("steppyBER") {
+            val expected = helper.steppyBer
+            val result = steppy.bayesErrorRate
+            assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size) //TODO: add a shouldBeApprox method
+        }
+        test("steppyMajority"){
+            val expected = helper.steppyMajorityErrorRate
+            val result = steppy.majorityErrorRate
+            assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size) //TODO: add a shouldBeApprox method
+        }
     }
-  }
 }
 
 
