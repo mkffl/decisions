@@ -11,6 +11,10 @@ scala: `scripts/prepUnitTests.sc`
 
 python: `/Users/michel/Documents/pjs/model-discrimination-calibration/scripts/rocch_unit_test.py`
 
+To run tests
+```bash
+./mill Decisions.test
+```
 
 # Running scripts
 Load all code base in ammonite with 
