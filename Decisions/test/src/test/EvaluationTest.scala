@@ -20,7 +20,7 @@ trait TestHelper {
 
 object helper {
     def gaussianScores: Tuple2[Vector[Double], Vector[Int]] = {
-        object RepeatableDistribution extends Distributions(new scala.util.Random(1234))
+        object RepeatableDistribution extends Distributions(new scala.util.Random(54321))
 
         val targets = for {
             logOdds <- RepeatableDistribution.normal
@@ -39,9 +39,8 @@ object helper {
 
         (scores, labels)
     }
-    
-    val steppyBer = Vector(0.11920292, 0.18242552, 0.26894142, 0.0292937 , 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
 
+    val steppyBer = Vector(0.11920292, 0.18242552, 0.26894142, 0.01937754, 0.5,        0.37754067, 0.26894142, 0.18242552, 0.11920292)
 }
 
 object EvaluationsTests extends TestSuite with TestHelper{
@@ -53,8 +52,6 @@ object EvaluationsTests extends TestSuite with TestHelper{
       val expected = helper.steppyBer
       val result = steppy.bayesErrorRate
       assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size) //TODO: add a shouldBeApprox method
-      //assert(result == expected)
-      result
     }
   }
 }

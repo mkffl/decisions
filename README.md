@@ -1,20 +1,24 @@
-# Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+# Unit tests
+Random seed set a the probability_monad level for repeatibility
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+`object RepeatableDistribution extends Distributions(new scala.util.Random(54321))`
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+scripts outputs scores and labels to feed into PYLLR and check that the results are the same
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+Script locations
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+scala: `scripts/prepUnitTests.sc`
+
+python: `/Users/michel/Documents/pjs/model-discrimination-calibration/scripts/rocch_unit_test.py`
+
+
+# Running scripts
+Load all code base in ammonite with 
+
+```bash
+./mill -i -w Decisions.repl
+```
+
+Note: had to upgrade to latest Mill version to avoid REPL errors.
+
+mill also allows predef files to run scripts but these won't have the project modules in scope so had to copy paste.
