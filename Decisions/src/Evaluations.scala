@@ -8,6 +8,14 @@ import com.github.sanity.pav._
 import smile.classification._
 import smile.math.MathEx.{logistic, min}
 
+
+import org.apache.commons.math3.optim.nonlinear.scalar.GoalType
+import org.apache.commons.math3.optim.MaxEval 
+import org.apache.commons.math3.optim.univariate.SearchInterval
+import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction
+import org.apache.commons.math3.optim.univariate.BrentOptimizer 
+
+
 object LinAlgebra {
     // TODO: find out how to use package objects 
     type Row = Vector[Double]
@@ -110,15 +118,35 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
         Vector(pmiss, pfa)
     }
 
-    val PP = logoddsToProbability(priorLogOdds)
-    val pMisspFa = convexHullCoordinates
+    val PP: Matrix = logoddsToProbability(priorLogOdds)
+    val pMisspFa: Matrix = convexHullCoordinates
 
-    def bayesErrorRate: Vector[Double] = {
+    /*
+    *  PP is (2,m)
+    */
+    def bayesErrorRate: Row = utils.minSumProd(PP, pMisspFa)
+
+    def bayesErrorRateOld(PP: Matrix): Row = {
         val E = matMul(PP.transpose, pMisspFa)
-        val ber = for (rate <- E) yield rate.min
+        val ber = for (err <- E) yield err.min
         ber
     }
-    def EER = ???
+    def EER: Double = {
+        def scalarBayesErrorRate(x: Double): Double = {
+            val PP = logoddsToProbability(Vector(x))
+            val ber: Row = utils.minSumProd(PP, pMisspFa)
+            ber(0)            
+        }
+        val obj = new UnivariateObjectiveFunction(x =>
+            scalarBayesErrorRate(x)
+        )
+        val goal = GoalType.MAXIMIZE
+        val maxEval = new MaxEval(500)
+        val optimizer = new BrentOptimizer(0.001, 0.001)
+        val interval = new SearchInterval(priorLogOdds(0), priorLogOdds.last, priorLogOdds.sum/priorLogOdds.size.toDouble)
+        val minn: Double = optimizer.optimize(obj, goal, interval, maxEval).getPoint
+        scalarBayesErrorRate(minn)
+    }
 }
 
 object utils {
@@ -165,6 +193,12 @@ object utils {
         val pFa = for ((r,v) <- rkD2 zip DdownTo1) yield (N - r.toFloat + v) / N
         //(pMiss.map(_.toDouble).toVector, pFa.map(_.toDouble).toVector)
         Vector(pMiss.toVector, pFa.toVector)
+    }
+
+    def minSumProd(A: Matrix, B: Matrix): Row = {
+        val product = matMul(A.transpose, B)
+        val minn = for (row <- product) yield row.min
+        minn
     }
 }
 
