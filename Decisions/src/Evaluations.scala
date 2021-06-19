@@ -149,6 +149,7 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
     }
 }
 
+
 object utils {
     import LinAlgebra._
     /*  - Method to get the PAV bins, i.e. the PAV-merged points.
@@ -164,6 +165,39 @@ object utils {
         val pav = new PairAdjacentViolators(inputPoints)
         val bins: Vector[Point] = getBins
     }
+
+    class BrentOptimizerScalarWrapper(
+        val objectiveFunction: (Double => Double), 
+        val intervalMin: Double, 
+        val intervalMax: Double, 
+        val iterations: Int = 500,
+        val minimize: Boolean = true
+        ) {
+        val objective = if(minimize == true){
+            new UnivariateObjectiveFunction(x => -1*objectiveFunction(x))
+        } else {
+            new UnivariateObjectiveFunction(x => objectiveFunction(x))
+        }            
+        val goal = GoalType.MAXIMIZE
+        val maxEval = new MaxEval(iterations)
+        val optimizer = new BrentOptimizer(0.001, 0.001)
+        val interval = new SearchInterval(intervalMin, intervalMax, 0.5*(intervalMax - intervalMin))
+        val optimized = optimizer.optimize(objective, goal, interval, maxEval)
+        def optimumPoint: Double = optimized.getPoint
+        def optimumValue: Double = if(minimize == true){
+            objectiveFunction(optimumPoint)
+        } else {
+            optimized.getValue
+        }
+    }
+
+    /*
+    def minimizeScalar(objectiveFunction: (Double => Double), intervalMin: Double, intervalMax: Double, iterations: Int = 500) = {
+        val optimizer = new BrentOptimizerScalarWrapper(objectiveFunction, intervalMin, intervalMax, iterations)
+        val minn: Double = optimizer.minimise
+        minn
+    }
+    */
 
     def ordinalRank(arr: Seq[Double]): Seq[Int] = {
         val withIndices = arr.zipWithIndex
