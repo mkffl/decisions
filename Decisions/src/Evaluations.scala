@@ -15,7 +15,6 @@ import org.apache.commons.math3.optim.univariate.SearchInterval
 import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction
 import org.apache.commons.math3.optim.univariate.BrentOptimizer 
 
-
 object LinAlgebra {
     // TODO: find out how to use package objects 
     type Row = Vector[Double]
@@ -73,7 +72,7 @@ from the scores but do compute them from the prior log-odds (equivalent??)
 trait ErrorEstimator {
     import LinAlgebra._
 
-    def logoddsToProbability(priorLogOdds: Row): Matrix = {
+    def logoddsToProbability(priorLogOdds: Vector[Double]): Matrix = {
         val pTar: Row = priorLogOdds.map(logistic)    
         val pNon: Row = priorLogOdds.map(x => logistic(-x))
         Vector(pTar, pNon)
@@ -118,34 +117,30 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
         Vector(pmiss, pfa)
     }
 
-    val PP: Matrix = logoddsToProbability(priorLogOdds)
     val pMisspFa: Matrix = convexHullCoordinates
 
     /*
     *  PP is (2,m)
     */
-    def bayesErrorRate: Row = utils.minSumProd(PP, pMisspFa)
 
+    def bayesErrorRate: Row = {
+        val PP = logoddsToProbability(priorLogOdds)
+        utils.minSumProd(PP, pMisspFa)
+    }
+    
     def bayesErrorRateOld(PP: Matrix): Row = {
         val E = matMul(PP.transpose, pMisspFa)
         val ber = for (err <- E) yield err.min
         ber
     }
     def EER: Double = {
-        def scalarBayesErrorRate(x: Double): Double = {
-            val PP = logoddsToProbability(Vector(x))
-            val ber: Row = utils.minSumProd(PP, pMisspFa)
-            ber(0)            
+        val objectiveFunction: (Double => Double) = x => {
+            val PP: Matrix = logoddsToProbability(Vector(x))
+            val minn: Row = utils.minSumProd(PP, pMisspFa)
+            minn(0)
         }
-        val obj = new UnivariateObjectiveFunction(x =>
-            scalarBayesErrorRate(x)
-        )
-        val goal = GoalType.MAXIMIZE
-        val maxEval = new MaxEval(500)
-        val optimizer = new BrentOptimizer(0.001, 0.001)
-        val interval = new SearchInterval(priorLogOdds(0), priorLogOdds.last, priorLogOdds.sum/priorLogOdds.size.toDouble)
-        val minn: Double = optimizer.optimize(obj, goal, interval, maxEval).getPoint
-        scalarBayesErrorRate(minn)
+        val maximised = new utils.BrentOptimizerScalarWrapper(objectiveFunction, priorLogOdds(0), priorLogOdds.last, minimize=false)
+        maximised.optimumValue
     }
 }
 
