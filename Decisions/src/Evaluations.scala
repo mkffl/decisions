@@ -232,19 +232,6 @@ object utils {
 }
 
 
-object Likelihood{
-
-    def plotCCD(w1Data: Seq[Double], w2Data: Seq[Double], title: String="Class Conditional Densities") = {
-        val trace1 = Histogram(w1Data, histnorm= HistNorm.Probability, name="Class ω1")
-        val trace2 = Histogram(w2Data, histnorm= HistNorm.Probability, name="Class ω2")
-        Seq(trace1, trace2).plot(title=title)
-    }
-
-    type Coord = be.cylab.java.roc.CurveCoordinates 
-
-}
-
-
 
 
 object Example{
