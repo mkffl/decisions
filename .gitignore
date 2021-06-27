@@ -3,12 +3,14 @@
 .metals/
 .bloop/
 
-# Artifacts
+# In/outputs
 outputs/
 out/
+data/
 
 # Non versioned code
 scripts/
 
 # Executables
 mill
+
