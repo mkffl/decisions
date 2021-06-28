@@ -30,12 +30,12 @@ object helper {
 
         val targets = for {
             logOdds <- RepeatableDistribution.normal
-            score = logistic(2.0 + logOdds)
+            theta_1 = 2.0 + 2.0*s
             } yield score
 
         val nonTargets = for {
             logOdds <- RepeatableDistribution.normal
-            score = logistic(-2.0 + logOdds)
+            theta_2 = -2.0 + 2.0*s
             } yield score
 
         val scores = (targets.sample(100) ++ nonTargets.sample(10000)).toVector
@@ -45,8 +45,12 @@ object helper {
 
         (scores, labels)
     }
-    val steppyBer = Vector(0.11920292, 0.18242552, 0.26894142, 0.01937754, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
-    val steppyMajorityErrorRate = Vector(0.11920292, 0.18242552, 0.26894142, 0.37754067, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
+    // Values from PYLLR after runnning the scores likelihoods generated above
+    val steppyBer = Vector(0.07964, 0.10648, 0.12938, 0.15323, 0.16108, 0.15174, 0.13339, 0.10423, 0.08058)//Vector(0.11920292, 0.18242552, 0.26894142, 0.01937754, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
+    val steppyMajorityErrorRate = Vector(0.1192 , 0.18243, 0.26894, 0.37754, 0.5    , 0.37754, 0.26894, 0.18243, 0.1192)//Vector(0.11920292, 0.18242552, 0.26894142, 0.37754067, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
+    val convexHullBER = Vector(0.07786, 0.10498, 0.12881, 0.14919, 0.15868, 0.14731, 0.128, 0.10397, 0.07802)//Vector(0.01169, 0.01416, 0.0169 , 0.01811, 0.01455, 0.01099, 0.00783, 0.00531, 0.00347)
+    val eer = 0.1603176277530788
+
 
     object PAVTestData {
         val x =  Vector(0.02, 0.1, 0.18, 0.2, 0.27, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9)
@@ -62,8 +66,9 @@ object EvaluationsTests extends TestSuite with TestHelper{
             val (scores, labels) = helper.gaussianScores
             val ploRange: Vector[Double] = (BigDecimal(-2.0) to BigDecimal(2.0) by 0.5).map(_.toDouble).toVector
             val steppy = new SteppyCurve(scores, labels, ploRange)
+            val convexHull = new PAV(scores, labels, ploRange)
 
-            test("steppyBER") {
+            test("observedDCF"){
                 val expected = helper.steppyBer
                 val result = steppy.bayesErrorRate
                 assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size) //TODO: add a shouldBeApprox method
@@ -72,6 +77,18 @@ object EvaluationsTests extends TestSuite with TestHelper{
                 val expected = helper.steppyMajorityErrorRate
                 val result = steppy.majorityErrorRate
                 assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size) //TODO: add a shouldBeApprox method
+            }
+            test("minDCF"){
+                implicit val precision = Precision(0.01)
+                val result = convexHull.bayesErrorRate
+                val expect = helper.convexHullBER
+                assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size)
+            }
+            test("EER"){
+                implicit val precision = Precision(0.01)
+                val result = convexHull.EER
+                val expect = helper.eer
+                assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size)
             }
         }
         test("minimizeScalar") {
@@ -101,29 +118,3 @@ object EvaluationsTests extends TestSuite with TestHelper{
     }
 }
 
-
-/*
-def bayesErrorRate(logOdds: T) = logOdds match {
-    case Double => {
-        val PP = logoddsToProbability(Vector(logOdds))
-        val ber: Row = utils.minSumProd(PP, pMisspFa)
-        ber(0)
-    }
-    case Vector[Double] => {
-        val ber: Row = utils.minSumProd(PP, pMisspFa)
-        ber
-    }
-}
-
-def EER: Double = {
-    val obj = new UnivariateObjectiveFunction(x =>
-        bayesErrorRate(x)
-    val optimized = new utils.BrentOptimizerScalarWrapper(obj, priorLogOdds(0), priorLogOdds.last)
-    optimized.valueResult
-}
-
-def times2[T](input: T) = input match {
-    case vect: Vector[Double] => vect.map(x => x * 2)
-    case scalar: Double => Vector(scalar).map(x => x * 2)
-}
-*/
