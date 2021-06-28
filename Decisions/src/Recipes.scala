@@ -12,12 +12,12 @@ import smile.data.`type`._
 import smile.data.measure._
 import smile.data.Tuple
 import smile.io.Read
+import smile.math.MathEx.{logistic, log}
 
 import plotly._, element._, layout._, Plotly._ 
 
 import decisions._
 import java.io._
-import smile.regression
 
 import java.io._
 
@@ -98,7 +98,9 @@ object CompareSystems{
             case Transaction(la, am, cnt) => Array(la.toDouble, am, cnt)
         }
 
-
+        def logit(x: Double): Double = {
+            log(x/(1-x))
+        }
 
         case class APE(
             val recognizer: String,
@@ -194,29 +196,29 @@ object CompareSystems{
         def fitTransformRecognizer(spec: System): Array[Double] = spec match {
             // xyTrain = trainData...asDataFrame
             // xEval = evalData.map({case Transaction(usertype, am, cnt) => Array(usertype, am)})
-            case (recognizer: Logit, _) => LogisticRegression.fit(formula, train).predictproba(evalArray)
-            case (recognizer: RF, _) => RandomForest.fit(formula, train).predictproba(evalArray)
+            case (recognizer: Logit, _) => LogisticRegression.fit(formula, train).predictproba(evalArray).map(logit)
+            case (recognizer: RF, _) => RandomForest.fit(formula, train).predictproba(evalArray).map(logit)
         }
 
         def fitTransformCalibrator(spec: System, scores: Array[Double]): Array[Double] = spec match {
             case (_, Uncalibrated) => scores
         }        
 
-        def trainSystem(spec: System): Tuple2[System, Array[Double]] = {
+        def trainSystem(spec: System): Array[Double] = {
             val recogniserscores = fitTransformRecognizer(spec)
             val calibratorscores = fitTransformCalibrator(spec, recogniserscores)
-            (spec, calibratorscores)
+            calibratorscores
         }
 
-        def evaluateSystem(input: Tuple2[System, Array[Double]], priorLogOdds: Vector[Double]): APE = {
+        //TODO: call scores 'lo' for log-odds
+        def evaluateSystem(spec: System, scores: Array[Double], priorLogOdds: Vector[Double]): APE = {
             val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector
-            val (system, scores) = input
-            val (recog, calib) = system
+            val (recog, calib) = spec
             val recogName: String = recog match {case Logit(name) => name; case RF(name) => name}
             val calibName: String = calib match {case Isotonic(name) => name
                 case Platt(name) => name
                 case Uncalibrated => "Uncalibrated"}
-            val steppy = new SteppyCurve(scores.toVector, yEval, priorLogOdds)  // faulty
+            val steppy = new SteppyCurve(scores.toVector, yEval, priorLogOdds)
             val pav = new PAV(scores.toVector, yEval, priorLogOdds)
             APE(recogName,
                 calibName,
@@ -228,11 +230,13 @@ object CompareSystems{
             )
         }
 
-        val plo: Vector[Double] = (BigDecimal(-2.0) to BigDecimal(2.0) by 0.5).map(_.toDouble).toVector
-        val trainedSystems: Seq[Tuple2[System, Array[Double]]] = for (spec <- specs) yield trainSystem(spec)
-        val evaluatedSystems: Seq[APE] = for (result <- trainedSystems) yield evaluateSystem(result, plo)
+        val plo: Vector[Double] = (BigDecimal(-5.0) to BigDecimal(5.0) by 0.25).map(_.toDouble).toVector
+        val trainedSystems: Seq[Array[Double]] = for (spec <- specs) yield trainSystem(spec)
+        val evaluatedSystems: Seq[APE] = for ( (scores, spec) <- trainedSystems.zip(specs)) yield evaluateSystem(spec, scores, plo)
         evaluatedSystems.foreach(plotAPE)
+    }
 }
+
 
 
 

@@ -7,7 +7,7 @@ import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 import smile.classification._
 import smile.math.MathEx.{logistic, min}
-
+import scala.math.{abs, floor, round}
 
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType
 import org.apache.commons.math3.optim.MaxEval 
@@ -48,16 +48,6 @@ object LinAlgebra {
     }
 }
 
-/*
-case class ErrorEstimator(
-    val scores: Vector[Double],
-    val labels: Vector[Int],
-    val priorLogOdds: Vector[Double],
-    val recognizer: String,
-    val calibrator: String,
-    val score: Vector[Double]
-)
-*/
 
 
 /*
@@ -183,16 +173,42 @@ object utils {
             objectiveFunction(optimumPoint)
         } else {
             optimized.getValue
-        }
+        }   
     }
 
-    /*
-    def minimizeScalar(objectiveFunction: (Double => Double), intervalMin: Double, intervalMax: Double, iterations: Int = 500) = {
-        val optimizer = new BrentOptimizerScalarWrapper(objectiveFunction, intervalMin, intervalMax, iterations)
-        val minn: Double = optimizer.minimise
-        minn
+    case class Reliability(bin: Double, frequency: Double, accuracy: Double, count: Integer)
+    val avg: (Array[Double] => Double) = values => values.sum/values.size.toDouble
+    val binTheValue: (Double => (Double => Double)) = width => (i => round(i / width).toInt*width)
+    val binBy0_05: (Double => Double) = binTheValue(0.05)
+    val binBy0_10: (Double => Double) = binTheValue(0.10)
+
+    def binnedAccuracy(pDev: Array[Double], yDev: Array[Int], binValue: Double => Double): Seq[Reliability] = {
+        val sorted: Array[(Double, Int)] = pDev.zip(yDev).sorted
+        val binned = sorted.map{case (proba, label) => (binValue(proba), proba, label)}
+
+        val bins = binned.groupMap(_._1)(_._3).map{case (bin, label) => bin}
+        val counts = binned.groupMap(_._1)(_._3).map{case (bin, label) => label.size}
+        val accuracy = binned.groupMap(_._1)(_._3).map{case (bin, label) => avg(label.map(_.toDouble))}
+        val frequency = binned.groupMap(_._1)(_._2).map{case (bin, proba) => avg(proba)}
+
+        // Combine the computations above.
+        val reliability = bins.zip(frequency.zip(accuracy.zip(counts))).map{
+            case (bin, (freq, (acc, cnt))) => Reliability(bin, freq, acc, cnt)
+        }
+
+        reliability.toSeq.sortBy(_.bin) // Too much sorting going on
     }
+
+
+    /* Expected Calibration Error
+        ∑_{bin1}^{binB}{ num_bins/N * abs(ac    c(b)−freq(b)) }
     */
+    def ECE(data: Seq[Reliability]): Double = {
+        val N = data.map(_.count.toDouble).sum
+        val ece = data.map{bin => (abs(bin.accuracy - bin.frequency)) * (bin.count / N) }
+                        .reduce( _ + _)
+        ece
+    }     
 
     def ordinalRank(arr: Seq[Double]): Seq[Int] = {
         val withIndices = arr.zipWithIndex
