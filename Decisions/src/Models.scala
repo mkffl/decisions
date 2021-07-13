@@ -86,7 +86,7 @@ object SmileKitLearn {
 
 
 
-class SmileFrame(data: Array[Transaction]){
+class SmileFrame(data: Array[Transaction]) extends decisions.Shared.FileIO{
     /* Converts an Array[Array[AnyVal]] to a Smile DataFrame. 
     
     Achieved by saving the array to CSV and loading it back. That's not great, but it's all I have
