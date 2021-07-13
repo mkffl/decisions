@@ -161,7 +161,7 @@ object CompareSystems{
                             y: Array[Int]
         ): Tuple2[Array[Double], Array[Double]] = {
             val p = lo.map(logistic)
-            val binValue = binnedAccuracy(p, y, binBy0_5)
+            val binValue = binnedAccuracy(p, y, binBy0_05)
             val frequency = binValue.map(_.frequency)
             val accuracy = binValue.map(_.accuracy)
             (frequency.toArray, accuracy.toArray)
