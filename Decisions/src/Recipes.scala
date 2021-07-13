@@ -74,8 +74,10 @@ object GaussianTestCase {
 object CompareSystems{
     import decisions.TransactionsData._
     import decisions.LinAlgebra._
-
-
+    import utils._
+    import decisions.SmileKitLearn._
+    import decisions.Dataset._
+    import decisions.Systems._ 
 
     object utils{
         def writeFile(filename: String, lines: Seq[String], headers: String): Unit = {
@@ -142,26 +144,78 @@ object CompareSystems{
                 plo,
                 majorityDCF,
                 name = "Majority Classifier DCF",
-                mode = ScatterMode(ScatterMode.Lines)
+                mode = ScatterMode(ScatterMode.Lines)  
             )
-
+        val layout = Layout(
+            title="APE"
+        )
             val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
-            val layout = Layout(
-                title="APE",
-                height = 650,
-                width = 600
-            )
+
             Plotly.plot("div-id", data, layout)
             }
         }
 
+        import decisions.utils._
+
+        def prepReliabilityPlot(lo: Array[Double],
+                            y: Array[Int]
+        ): Tuple2[Array[Double], Array[Double]] = {
+            val p = lo.map(logistic)
+            val binValue = binnedAccuracy(p, y, binBy0_5)
+            val frequency = binValue.map(_.frequency)
+            val accuracy = binValue.map(_.accuracy)
+            (frequency.toArray, accuracy.toArray)
+        }
+
+        def plotReliability(loDev: Array[Double],
+                            yDev: Array[Int],
+                            loEval: Array[Double],
+                            yEval: Array[Int]
+        ) = {
+        val (devFrequency, devAccuracy) = prepReliabilityPlot(loDev, yDev)
+        val (evalFrequency, evalAccuracy) = prepReliabilityPlot(loEval, yEval)
+
+        val devTrace = Scatter(
+            devFrequency.toVector,
+            devAccuracy.toVector,
+            name = "Development",
+            mode = ScatterMode(ScatterMode.Lines)
+        )
+        val evalTrace = Scatter(
+            evalFrequency.toVector,
+            evalAccuracy.toVector,
+            name = "Evaluation",
+            mode = ScatterMode(ScatterMode.Lines),
+            xaxis = AxisReference.X2,
+            yaxis = AxisReference.Y2 
+        )
+        val data = Seq(devTrace, evalTrace)
+        val layout = Layout(
+            title="Reliability plot",
+            xaxis = Axis(
+                anchor = AxisAnchor.Reference(AxisReference.Y1),
+                domain = (0, 0.45)),
+            yaxis = Axis(
+                anchor = AxisAnchor.Reference(AxisReference.X1),
+                domain = (0, 1)),
+            xaxis2 = Axis(
+                anchor = AxisAnchor.Reference(AxisReference.Y2),
+                domain = (0.55, 1)),
+            yaxis2 = Axis(
+                anchor = AxisAnchor.Reference(AxisReference.X2),
+                domain = (0, 1))
+        )
+
+        Plotly.plot("Reliability", data, layout)
+        }
     }
 
     object Application{
         import utils._
         import decisions.SmileKitLearn._
+        import decisions.SmileFrame._     
         import decisions.Dataset._
-        import decisions.Systems._        
+        import decisions.Systems._  
 
         val trainData = transaction.sample(10000)
         val calibData = transaction.sample(2000)
@@ -193,6 +247,7 @@ object CompareSystems{
 
         val specs: Seq[System] = List(s1, s2)
 
+        // Refactor as m = LogisticRegression.fit(formula, train); evalArray.map(m).map(logit)
         def fitTransformRecognizer(spec: System): Array[Double] = spec match {
             // xyTrain = trainData...asDataFrame
             // xEval = evalData.map({case Transaction(usertype, am, cnt) => Array(usertype, am)})
@@ -202,6 +257,14 @@ object CompareSystems{
 
         def fitTransformCalibrator(spec: System, scores: Array[Double]): Array[Double] = spec match {
             case (_, Uncalibrated) => scores
+            /* case Isotonic => {
+                val calibScores = m.predictproba(xCalib)
+                val calibrator = IsotonicRegression.fit(yCalibScores, calibScores)
+                calibrator.predictproba(scores)
+            }
+
+            
+            */
         }        
 
         def trainSystem(spec: System): Array[Double] = {
@@ -235,8 +298,134 @@ object CompareSystems{
         val evaluatedSystems: Seq[APE] = for ( (scores, spec) <- trainedSystems.zip(specs)) yield evaluateSystem(spec, scores, plo)
         evaluatedSystems.foreach(plotAPE)
     }
-}
 
+    object AppMap{
+        import decisions.SmileFrame._
+
+        val trainData: Seq[Transaction] = transaction.sample(10000)
+        val devData: Seq[Transaction] = transaction.sample(2000)
+        val evalData: Seq[Transaction] = transaction.sample(2000)
+
+        val trainSchema = DataTypes.struct(
+                new StructField("label", DataTypes.IntegerType),
+                new StructField("amount", DataTypes.DoubleType),
+                new StructField("count", DataTypes.DoubleType),
+        )
+        
+        val formula = Formula.lhs("label")
+
+        val predictSchema = DataTypes.struct(
+            new StructField("label", DataTypes.DoubleType),
+            new StructField("amount", DataTypes.DoubleType),
+            new StructField("count", DataTypes.DoubleType)
+        ) 
+
+        val plo: Vector[Double] = (BigDecimal(-5.0) to BigDecimal(5.0) by 0.25).map(_.toDouble).toVector        
+
+        val s1: System = (Logit("loggit"), Uncalibrated)
+        val s2: System = (RF("forest"), Uncalibrated)
+        val s3: System = (Logit("loggit"), Isotonic("isotonic"))
+        val s4: System = (RF("forest"), Isotonic("isotonic"))
+
+        val specs: Seq[System] = List(s1, s2, s3, s4)
+
+        // Prepare datasets
+        val rootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs/transactions_data"
+        val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
+        val xDev = devData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
+        val xEval = evalData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
+        val yDev = devData.map{case Transaction(u,a,c) => u}.toArray        
+
+        def getRecognizer(model: Recognizer, trainDF: DataFrame): (Array[Double] => Double) = model match {
+            case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba
+            case m: RF => RandomForest.fit(formula, trainDF).predictProba
+            }
+
+        def getCalibrator(model: Calibrator, pDev: Array[Double], yDev: Array[Int]): (Double => Double) = model match {
+                case Uncalibrated => x => x
+                case c: Isotonic => IsotonicRegressionScaling.fit(pDev, yDev).predict//.predictProba
+            }
+
+        /*
+        ** y <-> ground truth
+        ** x <-> predictors
+        ** p <-> predicted probabilities (calibrated or not)
+        ** lo <-> log-odds (calibrated or not)
+        ** Hence loEvalCal refers to the calibrated log-odds predictions on the evaluation data
+        ** TODO: check why the calibrated scores don't show improvements vs uncalibrated
+        */
+        def fitSystem(spec: System,
+                    trainDF: DataFrame, 
+                    xDev: Array[Array[Double]],
+                    yDev: Array[Int],
+                    xEval: Array[Array[Double]]
+        ) = {
+            // Fit and apply the recognizer
+            val recognizer = getRecognizer(spec._1, trainDF)
+            val pDev = xDev.map(recognizer)
+            val pEvalUncal = xEval.map(recognizer)
+            // Fit and apply the calibrator
+            val calibrator = getCalibrator(spec._2, pDev, yDev)
+            val loEvalCal = pEvalUncal.map(calibrator).map(logit)
+            loEvalCal
+        }
+
+        def evaluateSystem(spec: System, 
+                        lo: Array[Double], 
+                        priorLogOdds: Vector[Double]
+        ): APE = {
+            val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector
+            val (recog, calib) = spec
+            val recogName: String = recog match {case Logit(name) => name; case RF(name) => name}
+            val calibName: String = calib match {case Isotonic(name) => name
+                case Platt(name) => name
+                case Uncalibrated => "Uncalibrated"}
+            val steppy = new SteppyCurve(lo.toVector, yEval, priorLogOdds)
+            val pav = new PAV(lo.toVector, yEval, priorLogOdds)
+            APE(recogName,
+                calibName,
+                priorLogOdds,
+                steppy.bayesErrorRate,
+                pav.bayesErrorRate,
+                pav.EER,
+                steppy.majorityErrorRate
+            )
+        }        
+
+        val systems: Seq[Array[Double]] = for (spec <- specs) yield fitSystem(spec, trainDF, xDev, yDev, xEval)
+        val apes: Seq[APE] = for ( (scores, spec) <- systems.zip(specs)) yield evaluateSystem(spec, scores, plo)
+        apes.foreach(plotAPE) // Why does Isotonic not improve observed DCF?
+
+        // Risk - Experimental
+        val simSpec = (RF("forest"), Isotonic("isotonic"))
+        val recognizer = getRecognizer(simSpec._1, trainDF)
+        val pDev = xDev.map(recognizer)
+        val pEvalUncal = xEval.map(recognizer)
+        // Fit Calibrator
+        val calibrator = getCalibrator(simSpec._2, pDev, yDev)
+
+        val theta = 4.5
+        val thresh = -1.0*theta
+        val thresholder: (Double => Double) = lo => if (lo > thresh) {1} else {0.0}
+
+        val decisionMaker = recognizer.andThen(calibrator).andThen(logistic).andThen(thresholder)
+                                
+        val dataset: Distribution[List[Transaction]] = transaction.repeat(5)
+
+        val testtt = for (data <- dataset) yield for (tran <- data.toArray) yield Array(tran.amount, tran.count)
+        val rv = for (data <- dataset) yield 
+            for {
+                tran <- data.toArray
+                x = Array(tran.amount, tran.count)
+                decision = decisionMaker(x)
+            } yield decision
+
+
+
+
+
+    }
+}
 
 
 

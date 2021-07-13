@@ -10,6 +10,7 @@ import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 
 import decisions._
+import decisions.utils._
 import java.io._
 
 trait TestHelper {    
@@ -25,6 +26,17 @@ trait TestHelper {
 }
 
 object helper {
+    object ECE{
+        val pDevT = Array(0.9, 0.98, 0.85, 0.89, 0.65, 0.64, 0.32, 0.38, 0.30)
+        val yDevT = Array(1, 1, 0, 1, 1, 0, 0, 0, 1)
+        val expectedFrequency = Seq((0.32 + 0.38 + 0.30)/3.0, (0.65 + 0.64)/2.0 + (0.85 + 0.89)/2.0 + (0.98 + 0.90)/2.0)
+        val expectedAccuracy = Seq((0 + 0 + 1)/3.0, (0 + 1)/2.0 + (1 + 0)/2.0 + (1 + 1)/2.0)
+        
+          
+
+    }
+
+
     def gaussianScores: Tuple2[Vector[Double], Vector[Int]] = {
         object RepeatableDistribution extends Distributions(new scala.util.Random(54321))
 
@@ -114,6 +126,16 @@ object EvaluationsTests extends TestSuite with TestHelper{
             } yield values
             val expected = helper.PAVTestData.mean
             assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size)
+        }
+
+        test("CalibrationError"){
+            val metrics = binnedAccuracy(helper.ECE.pDevT, helper.ECE.yDevT)
+            val resultAccuracy = metrics.map(_.accuracy)
+            val resultFrequency = metrics.map(_.frequency)
+            val expectedAccuracy = helper.ECE.expectedAccuracy
+            val expectedFrequency = helper.ECE.expectedFrequency
+            assert(expectedAccuracy.zip(resultAccuracy).filter{tup => tup._1 ~= tup._2}.size == resultAccuracy.size)
+            assert(expectedFrequency.zip(resultFrequency).filter{tup => tup._1 ~= tup._2}.size == resultFrequency.size)
         }
     }
 }
