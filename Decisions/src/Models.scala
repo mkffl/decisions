@@ -22,6 +22,7 @@ object Systems{
 
     case class Logit(name: String) extends Recognizer
     case class RF(name: String) extends Recognizer
+    case class SupportVectorMachine(name: String) extends Recognizer
     case class Isotonic(name: String) extends Calibrator
     case class Platt(name: String) extends Calibrator
     case class Bionomial(name: String) extends Calibrator
@@ -69,6 +70,7 @@ class SmileKitLearn[T](model: T){
             m.predict(dataTupled, tempScore)
             tempScore(1)
         }
+        case m: SVM[Array[Double]] => m.score(data)
     }
     def predictProba(data: Double): Double = model match {
         case m: IsotonicRegressionScaling => m.predict(data)
@@ -81,6 +83,8 @@ object SmileKitLearn {
         new SmileKitLearn[LogisticRegression](m)
     implicit def rfToRf(m: RandomForest): SmileKitLearn[RandomForest] =
         new SmileKitLearn[RandomForest](m)
+    implicit def svmToSVM(m: SVM[Array[Double]]): SmileKitLearn[SVM[Array[Double]]] =
+        new SmileKitLearn[SVM[Array[Double]]](m)
 }
 
 

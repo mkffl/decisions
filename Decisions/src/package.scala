@@ -14,6 +14,8 @@ package object Shared{
             }
             bw.close()
         }
+
+        val plotlyRootP = "output"
     }
 
     trait LinAlg{
