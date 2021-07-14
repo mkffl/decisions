@@ -6,7 +6,6 @@ import smile.io.Read
 
 import org.apache.commons.csv.CSVFormat 
 
-import decisions.CompareSystems.utils._
 import decisions.TransactionsData._
 
 object Dataset{

@@ -74,7 +74,7 @@ class SteppyCurve(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vec
         import LinAlgebra._
 
         val PP = logoddsToProbability(priorLogOdds).transpose
-        val pMisspFa = utils.pMisspFaPoints(scores, labels, priorLogOdds).transpose
+        val pMisspFa = EvalUtils.pMisspFaPoints(scores, labels, priorLogOdds).transpose
         def bayesErrorRate = dotProduct(PP, pMisspFa) //dot product or 'dotProductSum'?
         def majorityErrorRate = PP.map(row => row.min)
 }
@@ -94,7 +94,7 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
         targets.zip(pavFit.bins).map{case (count,po) =>  (po.getWeight - count).toInt}
               .toVector
 
-    val pavFit = new utils.PairAdjacentViolatorsWrapper(scores, labels)
+    val pavFit = new EvalUtils.PairAdjacentViolatorsWrapper(scores, labels)
     val nbins = pavFit.bins.size
     val targets = countTargets
     val nonTars = countNonTargets
@@ -115,7 +115,7 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
 
     def bayesErrorRate: Row = {
         val PP = logoddsToProbability(priorLogOdds)
-        utils.minSumProd(PP, pMisspFa)
+        EvalUtils.minSumProd(PP, pMisspFa)
     }
     
     def bayesErrorRateOld(PP: Matrix): Row = {
@@ -126,17 +126,16 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
     def EER: Double = {
         val objectiveFunction: (Double => Double) = x => {
             val PP: Matrix = logoddsToProbability(Vector(x))
-            val minn: Row = utils.minSumProd(PP, pMisspFa)
+            val minn: Row = EvalUtils.minSumProd(PP, pMisspFa)
             minn(0)
         }
-        val maximised = new utils.BrentOptimizerScalarWrapper(objectiveFunction, priorLogOdds(0), priorLogOdds.last, minimize=false)
+        val maximised = new EvalUtils.BrentOptimizerScalarWrapper(objectiveFunction, priorLogOdds(0), priorLogOdds.last, minimize=false)
         maximised.optimumValue
     }
 }
 
 
-object utils {
-    import LinAlgebra._
+object EvalUtils extends decisions.Shared.LinAlg{
     /*  - Method to get the PAV bins, i.e. the PAV-merged points.
         - Handle kotlin to scala type conversion to hide it from the main PAV class.
     */
@@ -247,42 +246,9 @@ object utils {
     }
 }
 
-
-
-
 object Example{
   def main(args: Array[String]): Unit = {
-    // 1. Assessment making with APE and ROC
-    // 1.a. Get data sets
-    /*
-    val tr = ???
-    val cal = ???
-    val dev = ???
-    */
-
-    // 1.b. Fit the estimators i.e. recognizer and calibrator
-    /*
-    val rfRecog = ???
-    val logisticRecog = ???
-    val logisticCalib = ???
-    val isotonicCalib = ???
-    val identityCalib = ???
-    */
-
-    // 2. Validation with distributions
-
-    // Need plotting recipes
-println("a")
+    println("a")
   }
 }
 
-/*
-import plotly._, element._, layout._, Plotly._ 
-import scala.util
-import smile.classification._
-
-import collection.JavaConverters._
-
-object LLR {
-}
-*/

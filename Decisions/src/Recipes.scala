@@ -28,8 +28,10 @@ object CompareSystems extends decisions.Shared.LinAlg with decisions.Shared.Math
     import decisions.TransactionsData._
     import decisions.LinAlgebra._
     import decisions.SmileKitLearn._
+    import decisions.SmileFrame._
     import decisions.Dataset._
-    import decisions.Systems._ 
+    import decisions.Systems._
+    import decisions.EvalUtils._
 
     implicit def floatToDoubleRow(values: Row): Seq[Double] = values.toSeq
 
