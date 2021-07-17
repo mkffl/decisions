@@ -246,9 +246,11 @@ object EvalUtils extends decisions.Shared.LinAlg{
     }
 }
 
+/*
 object Example{
   def main(args: Array[String]): Unit = {
     println("a")
   }
 }
 
+*/

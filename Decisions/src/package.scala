@@ -15,7 +15,7 @@ package object Shared{
             bw.close()
         }
 
-        val plotlyRootP = "output"
+        val plotlyRootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs"
     }
 
     trait LinAlg{

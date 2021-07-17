@@ -100,47 +100,43 @@ trait CompareSystems extends decisions.Shared.LinAlg
         (frequency.toArray, accuracy.toArray)
     }
 
-    def plotReliability(loDev: Array[Double],
-                        yDev: Array[Int],
-                        loEval: Array[Double],
-                        yEval: Array[Int]
+    def plotReliability(lo1: Array[Double],
+                        y1: Array[Int],
+                        lo2: Array[Double],
+                        y2: Array[Int]
     ) = {
-        val (devFrequency, devAccuracy) = prepReliabilityPlot(loDev, yDev)
-        val (evalFrequency, evalAccuracy) = prepReliabilityPlot(loEval, yEval)
+        val (frequency1, accuracy1) = prepReliabilityPlot(lo1, y1)
+        val (frequency2, accuracy2) = prepReliabilityPlot(lo2, y2)
+        val frequencyPerfect = (0 to 100 by 5).toVector.map(_ / 100.0)
+        val accuracyPerfect = frequencyPerfect
 
-        val devTrace = Scatter(
-            devFrequency.toVector,
-            devAccuracy.toVector,
-            name = "Development",
-            mode = ScatterMode(ScatterMode.Lines)
+        val trace1 = Scatter(
+            frequency1.toVector,
+            accuracy1.toVector,
+            name = "Not Calibrated",
         )
-        val evalTrace = Scatter(
-            evalFrequency.toVector,
-            evalAccuracy.toVector,
-            name = "Evaluation",
-            mode = ScatterMode(ScatterMode.Lines),
-            xaxis = AxisReference.X2,
-            yaxis = AxisReference.Y2 
+        val trace2 = Scatter(
+            frequency2.toVector,
+            accuracy2.toVector,
+            name = "Calibrated"
         )
-        val data = Seq(devTrace, evalTrace)
+
+        val tracePerfect = Scatter(
+            frequencyPerfect,
+            accuracyPerfect,
+            name = "Perfect Calibration",
+            line = Line(dash = Dash.Dot)
+        )
+
+        val data = Seq(trace1, trace2, tracePerfect)
         val layout = Layout(
             title="Reliability plot",
-            xaxis = Axis(
-                anchor = AxisAnchor.Reference(AxisReference.Y1),
-                domain = (0, 0.45)),
-            yaxis = Axis(
-                anchor = AxisAnchor.Reference(AxisReference.X1),
-                domain = (0, 1)),
-            xaxis2 = Axis(
-                anchor = AxisAnchor.Reference(AxisReference.Y2),
-                domain = (0.55, 1)),
-            yaxis2 = Axis(
-                anchor = AxisAnchor.Reference(AxisReference.X2),
-                domain = (0, 1))
+            yaxis=Axis(title = "Accuracy"),
+            xaxis=Axis(title = "Frequency")
         )
 
-        //Plotly.plot(s"$plotlyRootP/Reliability", data, layout)
-        Plotly.plot("reliability.html", data, layout)
+        Plotly.plot(s"$plotlyRootP/reliability.html", data, layout)
+        //Plotly.plot("reliability.html", data, layout)
     }
 
 
@@ -227,40 +223,41 @@ trait CompareSystems extends decisions.Shared.LinAlg
 
 
 object Bug14 extends CompareSystems{
-    val trainData: Seq[Transaction] = transaction.sample(10000)
-    val devData: Seq[Transaction] = transaction.sample(5000)
-    val evalData: Seq[Transaction] = transaction.sample(5000)
+    def main(args: Array[String]): Unit = {
+        val trainData: Seq[Transaction] = transaction.sample(10000)
+        val devData: Seq[Transaction] = transaction.sample(5000)
+        val evalData: Seq[Transaction] = transaction.sample(5000)
 
-    val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
-    val xDev = devData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
-    val xEval = evalData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
-    val yDev = devData.map{case Transaction(u,a,c) => u}.toArray
-    val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector    
+        val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
+        val xDev = devData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
+        val xEval = evalData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
+        val yDev = devData.map{case Transaction(u,a,c) => u}.toArray
+        val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector    
 
-    val prop:  java.util.Map[String, String] = Map("smile.random.forest.trees" -> "100",
-        "smile.random.forest.mtry" -> "0",
-        "smile.random.forest.split.rule" -> "GINI",
-        "smile.random.forest.max.depth" -> "1000",
-        "smile.random.forest.max.nodes" -> "10000",
-        "smile.random.forest.node.size" -> "2",
-        "smile.random.forest.sample.rate" -> "1.0")
-    .asJava
-    val rfParams = new Properties()
-    rfParams.putAll(rfParams)
+        val prop:  java.util.Map[String, String] = Map("smile.random.forest.trees" -> "100",
+            "smile.random.forest.mtry" -> "0",
+            "smile.random.forest.split.rule" -> "GINI",
+            "smile.random.forest.max.depth" -> "1000",
+            "smile.random.forest.max.nodes" -> "10000",
+            "smile.random.forest.node.size" -> "2",
+            "smile.random.forest.sample.rate" -> "1.0")
+        .asJava
+        val rfParams = new Properties()
+        rfParams.putAll(rfParams)
 
-    def getRecognizer2(model: Recognizer, trainDF: DataFrame, rfParams: Option[Properties]): (Array[Double] => Double) = model match {
-        case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba
-        case m: RF => RandomForest.fit(formula, trainDF, rfParams.getOrElse(new Properties())).predictProba
-        }    
+        def getRecognizer2(model: Recognizer, trainDF: DataFrame, rfParams: Option[Properties]): (Array[Double] => Double) = model match {
+            case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba
+            case m: RF => RandomForest.fit(formula, trainDF, rfParams.getOrElse(new Properties())).predictProba
+            }    
 
-    val simSpec = (SupportVectorMachine("svm"), Isotonic("isotonic"))
-    val recognizer = getRecognizer(simSpec._1, trainDF)
-    val pDev = xDev.map(recognizer)
-    val pEvalUncal = xEval.map(recognizer)
-    val calibrator = getCalibrator(simSpec._2, pDev, yDev)
-    val loEvalCal = pEvalUncal.map(calibrator).map(logit)
-    val loEvalUncal = pEvalUncal.map(logit) 
+        val simSpec = (SupportVectorMachine("svm"), Isotonic("isotonic"))
+        val recognizer = getRecognizer(simSpec._1, trainDF)
+        val pDev = xDev.map(recognizer)
+        val pEvalUncal = xEval.map(recognizer)
+        val calibrator = getCalibrator(simSpec._2, pDev, yDev)
+        val loEvalCal = pEvalUncal.map(calibrator).map(logit)
+        val loEvalUncal = pEvalUncal.map(logit) 
 
-    plotReliability(loEvalUncal, yEval.toArray, loEvalCal, yEval.toArray)
+        plotReliability(loEvalUncal, yEval.toArray, loEvalCal, yEval.toArray)
+    }
 }
-
