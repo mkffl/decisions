@@ -63,7 +63,7 @@ trait ErrorEstimator {
     import LinAlgebra._
 
     def logoddsToProbability(priorLogOdds: Vector[Double]): Matrix = {
-        val pTar: Row = priorLogOdds.map(logistic)    
+        val pTar: Row = priorLogOdds.map(logistic)
         val pNon: Row = priorLogOdds.map(x => logistic(-x))
         Vector(pTar, pNon)
     }

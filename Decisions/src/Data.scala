@@ -51,4 +51,36 @@ object TransactionsData {
             count <- transactionCount(userType)
         } yield Transaction(userType, amount, count)
     }
+
+    def gaussianFeature(loc: Double)(userType: Int) = userType match {
+        case 0 => Distribution.normal + loc
+        case 1 => Distribution.normal - loc
+    }
+
+    def feat1 = gaussianFeature(1.0)(_)
+    def feat2 = gaussianFeature(1.5)(_)
+    def feat3 = gaussianFeature(0.8)(_)
+    def feat4 = gaussianFeature(-2.0)(_)
+    def feat5 = gaussianFeature(-1.0)(_)
+
+    case class Transact(userType: Int, 
+        f1: Double, f2: Double, f3: Double, f4: Double, f5: Double, 
+        f6: Double, f7: Double, f8: Double, f9: Double, f10: Double
+    )
+
+    def transact(p_w1: Double): probability_monad.Distribution[Transact] = {
+        for {
+            ut <- Distribution.bernoulli(p_w1)
+            f1 <- feat1(ut)
+            f2 <- feat2(ut)
+            f3 <- feat3(ut)
+            f4 <- feat4(ut)
+            f5 <- feat5(ut)
+            f6 = f1*1.5 - 3.0
+            f7 = f2*2.0 - 4.0
+            f8 = f3*0.7 + 1.8
+            f9 = f4*0.5 - 0.5
+            f10 = f5 + 3.0
+        } yield Transact(ut,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)
+    }
 }

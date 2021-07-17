@@ -7,6 +7,7 @@ import smile.io.Read
 import org.apache.commons.csv.CSVFormat 
 
 import decisions.TransactionsData._
+import java.util.Properties
 
 object Dataset{
     trait DecisionDataset
@@ -20,12 +21,12 @@ object Systems{
     trait Recognizer extends Transformer
     trait Calibrator extends Transformer
 
-    case class Logit(name: String) extends Recognizer
-    case class RF(name: String) extends Recognizer
-    case class SupportVectorMachine(name: String) extends Recognizer
+    case class Logit(name: String, params: Option[Properties]) extends Recognizer
+    case class RF(name: String, params: Option[Properties]) extends Recognizer
+    case class SupportVectorMachine(name: String, params: Option[Properties]) extends Recognizer
     case class Isotonic(name: String) extends Calibrator
     case class Platt(name: String) extends Calibrator
-    case class Bionomial(name: String) extends Calibrator
+    case class Bionomial(name: String) extends Calibrator // what's that?
     case object Uncalibrated extends Calibrator
 
     type System = Tuple2[Recognizer, Calibrator]    
@@ -89,7 +90,7 @@ object SmileKitLearn {
 
 
 
-class SmileFrame(data: Array[Transaction]) extends decisions.Shared.FileIO{
+class SmileFrame(data: Array[Transact]) extends decisions.Shared.FileIO{
     /* Converts an Array[Array[AnyVal]] to a Smile DataFrame. 
     
     Achieved by saving the array to CSV and loading it back. That's not great, but it's all I have
@@ -109,10 +110,20 @@ class SmileFrame(data: Array[Transaction]) extends decisions.Shared.FileIO{
         //if (schema.fields.size != data.size)
         //throw new Exception("Number of fields don't match. Check the schema.")
 
+        /*
         val stringified: Array[String] = for {
             row <- data
         } yield caseclassToString(row)
+        */
+
+        val stringify: (Transact => String) = row => {
+            val startIndex = row.toString.indexOf("(")+1
+            val endIndex = row.toString.indexOf(")")
+            row.toString.slice(startIndex, endIndex)
+        }
         
+        val stringified: Array[String] = data.map(stringify)
+
         val fields = schema.fields.map(_.name).mkString(",")
 
         writeFile(s"$rootPath/temp.csv", stringified, fields)
@@ -123,6 +134,6 @@ class SmileFrame(data: Array[Transaction]) extends decisions.Shared.FileIO{
 }
 
 object SmileFrame {
-    implicit def ArrayToDataFrame(d: Array[Transaction]): SmileFrame =
+    implicit def ArrayToDataFrame(d: Array[Transact]): SmileFrame =
         new SmileFrame(d)
 }

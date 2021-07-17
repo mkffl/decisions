@@ -82,11 +82,14 @@ trait CompareSystems extends decisions.Shared.LinAlg
             mode = ScatterMode(ScatterMode.Lines)  
         )
     val layout = Layout(
-        title="APE"
+        title="APE",
+        yaxis = Axis(
+            range = (0.0, 0.005),
+            title = "Error Probability")
     )
         val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
 
-        Plotly.plot("div-id", data, layout)
+        Plotly.plot(s"$plotlyRootP/ape.html", data, layout)
         }
     }
 
@@ -94,7 +97,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
                         y: Array[Int]
     ): Tuple2[Array[Double], Array[Double]] = {
         val p = lo.map(logistic)
-        val binValue = binnedAccuracy(p, y, binBy0_05)
+        val binValue = binnedAccuracy(p, y, binBy0_10)
         val frequency = binValue.map(_.frequency)
         val accuracy = binValue.map(_.accuracy)
         (frequency.toArray, accuracy.toArray)
@@ -139,34 +142,22 @@ trait CompareSystems extends decisions.Shared.LinAlg
         //Plotly.plot("reliability.html", data, layout)
     }
 
-
-    val trainSchema = DataTypes.struct(
-            new StructField("label", DataTypes.IntegerType),
-            new StructField("amount", DataTypes.DoubleType),
-            new StructField("count", DataTypes.DoubleType),
-    )
     
     val formula = Formula.lhs("label")
-
-    val predictSchema = DataTypes.struct(
-        new StructField("label", DataTypes.DoubleType),
-        new StructField("amount", DataTypes.DoubleType),
-        new StructField("count", DataTypes.DoubleType)
-    ) 
 
     val plo: Vector[Double] = (BigDecimal(-5.0) to BigDecimal(5.0) by 0.25).map(_.toDouble).toVector
     val rootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs/transactions_data"    
 
     def getRecognizer(model: Recognizer, trainDF: DataFrame): (Array[Double] => Double) = model match {
-        case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba
-        case m: RF => RandomForest.fit(formula, trainDF).predictProba
-        case m: SupportVectorMachine => {
+        case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba //TODO: add properties
+        case m: RF => RandomForest.fit(formula, trainDF, m.params.getOrElse(new Properties())).predictProba
+        case m: SupportVectorMachine => { //TODO: add properties
             val X = formula.x(trainDF).toArray
             val y = formula.y(trainDF).toIntArray.map{case 0 => -1; case 1 => 1}
             val kernel = new GaussianKernel(8.0)
             SVM.fit(X, y, kernel, 5, 1E-3).predictProba
+        }            
         }
-    }
 
     def getCalibrator(model: Calibrator, pDev: Array[Double], yDev: Array[Int]): (Double => Double) = model match {
             case Uncalibrated => x => x
@@ -204,7 +195,10 @@ trait CompareSystems extends decisions.Shared.LinAlg
     ): APE = {
         //val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector
         val (recog, calib) = spec
-        val recogName: String = recog match {case Logit(name) => name; case RF(name) => name}
+        val recogName: String = recog match {case Logit(name, p) => name
+                case RF(name, p) => name
+                case SupportVectorMachine(name, p) => name
+        }
         val calibName: String = calib match {case Isotonic(name) => name
             case Platt(name) => name
             case Uncalibrated => "Uncalibrated"}
@@ -219,20 +213,50 @@ trait CompareSystems extends decisions.Shared.LinAlg
             steppy.majorityErrorRate
         )
     }
+
+    def outcomeCost(Cmiss: Double, Cfa: Double, pred: Int, actual: Int) = pred match {
+            case 1 if actual == 0 => Cfa
+            case 0 if actual == 1 => Cmiss
+            case _ => 0.0
+    }
+
+    def DCF(Cmiss: Double, Cfa: Double)(yhat: Vector[Int], y: Vector[Int]): Double = {
+        val costs = for {
+            (pred, actual) <- yhat.zip(y)
+            cost = outcomeCost(Cmiss, Cfa, pred, actual)
+            } yield cost
+        costs.sum / costs.size.toFloat        
+    }
 }
 
 
 object Bug14 extends CompareSystems{
-    def main(args: Array[String]): Unit = {
-        val trainData: Seq[Transaction] = transaction.sample(10000)
-        val devData: Seq[Transaction] = transaction.sample(5000)
-        val evalData: Seq[Transaction] = transaction.sample(5000)
+    def temp(args: Array[String]) = {
+        val p_w1 = 0.3
+        val trainData: Seq[Transact] = transact(p_w1).sample(20000)
+        val devData: Seq[Transact] = transact(p_w1).sample(10000)
+        val evalData: Seq[Transact] = transact(p_w1).sample(10000)
+
+
+        val trainSchema = DataTypes.struct(
+                new StructField("label", DataTypes.IntegerType),
+                new StructField("f1", DataTypes.DoubleType),
+                new StructField("f2", DataTypes.DoubleType),
+                new StructField("f3", DataTypes.DoubleType),
+                new StructField("f4", DataTypes.DoubleType),
+                new StructField("f5", DataTypes.DoubleType),
+                new StructField("f6", DataTypes.DoubleType),
+                new StructField("f7", DataTypes.DoubleType),
+                new StructField("f8", DataTypes.DoubleType),
+                new StructField("f9", DataTypes.DoubleType),
+                new StructField("f10", DataTypes.DoubleType),
+        )        
 
         val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
-        val xDev = devData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
-        val xEval = evalData.map{case Transaction(u,a,c) => Array(a,c)}.toArray
-        val yDev = devData.map{case Transaction(u,a,c) => u}.toArray
-        val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector    
+        val xDev = devData.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => Array(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)}.toArray
+        val xEval = evalData.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => Array(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)}.toArray
+        val yDev = devData.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => u}.toArray
+        val yEval = evalData.map({case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => u}).toVector    
 
         val prop:  java.util.Map[String, String] = Map("smile.random.forest.trees" -> "100",
             "smile.random.forest.mtry" -> "0",
@@ -245,19 +269,45 @@ object Bug14 extends CompareSystems{
         val rfParams = new Properties()
         rfParams.putAll(rfParams)
 
-        def getRecognizer2(model: Recognizer, trainDF: DataFrame, rfParams: Option[Properties]): (Array[Double] => Double) = model match {
-            case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba
-            case m: RF => RandomForest.fit(formula, trainDF, rfParams.getOrElse(new Properties())).predictProba
-            }    
-
-        val simSpec = (SupportVectorMachine("svm"), Isotonic("isotonic"))
+        val simSpec = (SupportVectorMachine("svm", None), Isotonic("isotonic"))
         val recognizer = getRecognizer(simSpec._1, trainDF)
         val pDev = xDev.map(recognizer)
         val pEvalUncal = xEval.map(recognizer)
         val calibrator = getCalibrator(simSpec._2, pDev, yDev)
         val loEvalCal = pEvalUncal.map(calibrator).map(logit)
         val loEvalUncal = pEvalUncal.map(logit) 
+        
+        //plotReliability(loEvalUncal, yEval.toArray, loEvalCal, yEval.toArray) // OK
+        
+        val systems: Seq[Array[Double]] = for (spec <- Seq(simSpec)) yield fitSystem(spec, trainDF, xDev, yDev, xEval)
+        val apes: Seq[APE] = for ( (lo, spec) <- systems.zip(Seq(simSpec))) yield evaluateSystem(spec, lo, yEval, plo)
+        apes.foreach(plotAPE)
+        
+        (recognizer, calibrator, apes)
+    }
 
-        plotReliability(loEvalUncal, yEval.toArray, loEvalCal, yEval.toArray)
+    def more = {
+        val (recognizer, calibrator, apes) = temp(Array(""))
+        val thetaTest = -0.75
+        val ploTest = logistic(thetaTest)
+        val thresh = -1.0*thetaTest
+        val thresholder: (Double => Int) = lo => if (lo > thresh) {1} else {0}        
+        val decisionMaker: (Array[Double] => Int) = recognizer.
+                andThen(calibrator).
+                andThen(logit).
+                andThen(thresholder)
+
+        val verifyData = transact(ploTest).repeat(10)
+        /*
+        val riskExperiment = for {
+            data <- verifyData
+            x = data.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => Array(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)}.toArray
+            y = data.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => u}.toArray
+        } yield for {
+            (predictor, target) <- x.zip(y)
+            prediction = decisionMaker(predictor)
+            cost = outcomeCost(1, 1, prediction, target)
+        } yield cost
+        */
     }
 }
