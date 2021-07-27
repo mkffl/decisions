@@ -90,7 +90,7 @@ object SmileKitLearn {
 
 
 
-class SmileFrame(data: Array[Transact]) extends decisions.Shared.FileIO{
+class SmileFrame(data: Array[Transaction]) extends decisions.Shared.FileIO{
     /* Converts an Array[Array[AnyVal]] to a Smile DataFrame. 
     
     Achieved by saving the array to CSV and loading it back. That's not great, but it's all I have
@@ -99,34 +99,45 @@ class SmileFrame(data: Array[Transact]) extends decisions.Shared.FileIO{
     I can convert the array to a Smile Tuple and apply ofDataFrame() but it throws an error
     when the Tuples are of mixed primitive types, which is a requirement here.
     */
+
+    /* ","-separated string representation of a Vector[Double]
+        Examples: Vector(3.30, 2.40) => "3.30,2.40"
+    */
+
     def asDataFrame(schema: StructType, rootPath: String): DataFrame = {
         val format = CSVFormat.DEFAULT.withFirstRecordAsHeader()
 
+        // add as argument of type Transaction => String
         def caseclassToString(tr: Transaction) = tr match {
-            case Transaction(la, am, cnt) => f"$la, $am%1.2f, $cnt%1.2f"
+            case Transaction(user, features) => s"${userToInt(user)}," + stringifyVector(features)
             case _ => "not a transaction."
         }
+
+        def userToInt(user: User): Int = user match {
+            case Regular => 0
+            case Fraudster => 1
+        }        
 
         //if (schema.fields.size != data.size)
         //throw new Exception("Number of fields don't match. Check the schema.")
 
-        /*
-        val stringified: Array[String] = for {
+        
+        val asString: Array[String] = for {
             row <- data
         } yield caseclassToString(row)
-        */
+        
 
-        val stringify: (Transact => String) = row => {
+        val stringify: (Transaction => String) = row => {
             val startIndex = row.toString.indexOf("(")+1
             val endIndex = row.toString.indexOf(")")
             row.toString.slice(startIndex, endIndex)
         }
         
-        val stringified: Array[String] = data.map(stringify)
+        //val stringified: Array[String] = data.map(toString)
 
         val fields = schema.fields.map(_.name).mkString(",")
 
-        writeFile(s"$rootPath/temp.csv", stringified, fields)
+        writeFile(s"$rootPath/temp.csv", asString, fields)
 
         val df: DataFrame = Read.csv(s"$rootPath/temp.csv", format, schema)
         df
@@ -134,6 +145,6 @@ class SmileFrame(data: Array[Transact]) extends decisions.Shared.FileIO{
 }
 
 object SmileFrame {
-    implicit def ArrayToDataFrame(d: Array[Transact]): SmileFrame =
+    implicit def ArrayToDataFrame(d: Array[Transaction]): SmileFrame =
         new SmileFrame(d)
 }

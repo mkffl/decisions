@@ -3,7 +3,7 @@ package decisions
 import probability_monad._
 import scala.util
 import java.util.Properties
-import collection.JavaConverters._ 
+import collection.JavaConverters._
 
 import org.apache.commons.csv.CSVFormat 
 import smile.math.MathEx.{logistic, min, log}
@@ -81,12 +81,12 @@ trait CompareSystems extends decisions.Shared.LinAlg
             name = "Majority Classifier DCF",
             mode = ScatterMode(ScatterMode.Lines)  
         )
-    val layout = Layout(
-        title="APE",
-        yaxis = Axis(
-            range = (0.0, 0.005),
-            title = "Error Probability")
-    )
+        val layout = Layout(
+            title="APE",
+            yaxis = Axis(
+                range = (0.0, 0.5),
+                title = "Error Probability")
+        )
         val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
 
         Plotly.plot(s"$plotlyRootP/ape.html", data, layout)
@@ -148,6 +148,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
     val plo: Vector[Double] = (BigDecimal(-5.0) to BigDecimal(5.0) by 0.25).map(_.toDouble).toVector
     val rootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs/transactions_data"    
 
+    /*
     def getRecognizer(model: Recognizer, trainDF: DataFrame): (Array[Double] => Double) = model match {
         case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba //TODO: add properties
         case m: RF => RandomForest.fit(formula, trainDF, m.params.getOrElse(new Properties())).predictProba
@@ -213,6 +214,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
             steppy.majorityErrorRate
         )
     }
+    */
 
     def outcomeCost(Cmiss: Double, Cfa: Double, pred: Int, actual: Int) = pred match {
             case 1 if actual == 0 => Cfa
@@ -227,10 +229,149 @@ trait CompareSystems extends decisions.Shared.LinAlg
             } yield cost
         costs.sum / costs.size.toFloat        
     }
+
+    class Estimator(val spec: System){
+        import Estimator._
+        // Fit and apply the recognizer
+        val recognizer = getRecognizer(spec._1, trainDF)
+        val pDev = xDev.map(recognizer)
+        val pEvalUncal = xEval.map(recognizer)
+        // Fit and apply the calibrator
+        val calibrator = getCalibrator(spec._2, pDev, yDev)
+        val loEvalCal = pEvalUncal.map(calibrator).map(logit)
+        // Evaluate the system
+        val steppy = new SteppyCurve(loEvalCal.toVector, yEval, plodds)
+        val pav = new PAV(loEvalCal.toVector, yEval, plodds)
+        // Plot the results
+        def getAPE: APE = APE(getName(spec._1),
+            getName(spec._2),
+            plodds,
+            steppy.bayesErrorRate,
+            pav.bayesErrorRate,
+            pav.EER,
+            steppy.majorityErrorRate
+        )
+    }
+
+    object Estimator{
+        // Instantiate the data shared across estimators
+        val p_w1 = 0.3
+        val trainData: Seq[Transaction] = transact(p_w1).sample(5000)
+        val devData: Seq[Transaction] = transact(p_w1).sample(2000)
+        val evalData: Seq[Transaction] = transact(p_w1).sample(2000)
+        val trainSchema = DataTypes.struct(
+                new StructField("label", DataTypes.IntegerType),
+                new StructField("f1", DataTypes.DoubleType),
+                new StructField("f2", DataTypes.DoubleType),
+                new StructField("f3", DataTypes.DoubleType),
+                new StructField("f4", DataTypes.DoubleType),
+                new StructField("f5", DataTypes.DoubleType),
+                new StructField("f6", DataTypes.DoubleType),
+                new StructField("f7", DataTypes.DoubleType),
+                new StructField("f8", DataTypes.DoubleType),
+                new StructField("f9", DataTypes.DoubleType),
+                new StructField("f10", DataTypes.DoubleType),
+        )
+        def extractFeatures(row: Transaction): Array[Double] = row match {
+            case Transaction(u,feats) => feats.toArray
+        }
+        def extractUser(row: Transaction): Int = row match {
+            case Transaction(Regular,feats) => 0
+            case Transaction(Fraudster,feats) => 1
+        }
+
+        val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
+        val xDev = devData.map(extractFeatures).toArray
+        val xEval = evalData.map(extractFeatures).toArray
+        val yDev = devData.map(extractUser).toArray
+        val yEval = evalData.map(extractUser).toVector
+        val plodds: Vector[Double] = (BigDecimal(-5.0) to BigDecimal(5.0) by 0.25).map(_.toDouble).toVector
+
+        // Methods used during evaluation
+        def getRecognizer(model: Recognizer, trainDF: DataFrame): (Array[Double] => Double) = model match {
+            case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba //TODO: add properties
+            case m: RF => RandomForest.fit(formula, trainDF, m.params.getOrElse(new Properties())).predictProba
+            case m: SupportVectorMachine => { //TODO: add properties
+                val X = formula.x(trainDF).toArray
+                val y = formula.y(trainDF).toIntArray.map{case 0 => -1; case 1 => 1}
+                val kernel = new GaussianKernel(8.0)
+                SVM.fit(X, y, kernel, 5, 1E-3).predictProba
+            }            
+            }
+
+        def getCalibrator(model: Calibrator, pDev: Array[Double], yDev: Array[Int]): (Double => Double) = model match {
+                case Uncalibrated => x => x
+                case c: Isotonic => IsotonicRegressionScaling.fit(pDev, yDev).predict//.predictProba
+        }        
+        def getName(tr: Transformer) = tr match {
+                case Logit(name, p) => name
+                case RF(name, p) => name
+                case SupportVectorMachine(name, p) => name
+                case Isotonic(name) => name
+                case Platt(name) => name
+                case Uncalibrated => "Uncalibrated"
+                case _ => "Not referenced"
+        }
+    }
+
 }
 
+/*
+import decisions.Systems._; import decisions.CompareSystems._; val calibExp = new Estimator( ( SupportVectorMachine("svm", None), Isotonic("isotonic")) ) 
+val uncalibExp = new Estimator( ( SupportVectorMachine("svm", None), Uncalibrated) )
+
+*/
 
 object Bug14 extends CompareSystems{
+    def modelCheck = {
+        // one calib and one non calibrated model
+        // assert that calibrated scores are monotonous
+        //Note: svm returns negative probabilities
+
+        val prop:  java.util.Map[String, String] = Map("smile.random.forest.trees" -> "100",
+            "smile.random.forest.mtry" -> "0",
+            "smile.random.forest.split.rule" -> "GINI",
+            "smile.random.forest.max.depth" -> "1000",
+            "smile.random.forest.max.nodes" -> "10000",
+            "smile.random.forest.node.size" -> "2",
+            "smile.random.forest.sample.rate" -> "1.0").asJava
+        val rfParams = new Properties()
+        rfParams.putAll(rfParams)
+
+        val calibExp = new Estimator( ( RF("rf", Some(rfParams)), Isotonic("isotonic")) ) 
+        val uncalibExp = new Estimator( ( RF("rf", Some(rfParams)), Uncalibrated) )
+        val comb = calibExp.loEvalCal.zip(uncalibExp.loEvalCal).sortBy(tup => tup._1)
+        (calibExp, uncalibExp)
+
+
+        //import decisions.Bug14._; val (calibExp, uncalibExp) = modelCheck
+        // not monotonous... investigate
+    }
+
+    def pavCheck = {
+        import decisions.TransactionsData._ 
+
+        def getLogodds(label: Int) = label match {
+            case 0 => Distribution.normal
+            case 1 => Distribution.normal*1.5 + 2.0
+        }
+        def lodds = for {
+            label <- Distribution.bernoulli(0.5)
+            lo <- getLogodds(label)
+        } yield (label, lo)
+        def monot_func(x: Double) = 1/(1+scala.math.exp(-1.5*x+2))
+
+        val data = lodds.sample(2000)
+        val lo = data.map(_._2).toVector
+        val loUncalib = data.map(_._2).map(monot_func).toVector
+        val y = data.map(_._1).toVector
+
+        val pavCalib = new PAV(lo, y, Estimator.plodds)
+        val pavUncalib = new PAV(loUncalib, y, Estimator.plodds)
+        (pavCalib, pavUncalib, data)
+        //import decisions.Bug14._; val (pavCalib, pavUncalib, data) = pavCheck
+    }
+    /*
     def temp(args: Array[String]) = {
         val p_w1 = 0.3
         val trainData: Seq[Transact] = transact(p_w1).sample(20000)
@@ -264,8 +405,7 @@ object Bug14 extends CompareSystems{
             "smile.random.forest.max.depth" -> "1000",
             "smile.random.forest.max.nodes" -> "10000",
             "smile.random.forest.node.size" -> "2",
-            "smile.random.forest.sample.rate" -> "1.0")
-        .asJava
+            "smile.random.forest.sample.rate" -> "1.0").asJava
         val rfParams = new Properties()
         rfParams.putAll(rfParams)
 
@@ -310,4 +450,5 @@ object Bug14 extends CompareSystems{
         } yield cost
         */
     }
+    */
 }
