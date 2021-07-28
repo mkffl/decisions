@@ -2,6 +2,7 @@ package decisions
 
 import smile.math.MathEx.{log}
 import java.io._
+import smile.math.MathEx.{logistic, min, log}
 
 package object Shared{
     trait FileIO {
@@ -68,6 +69,8 @@ package object Shared{
     trait MathHelp{
         def logit(x: Double): Double = {
             log(x/(1-x))
-        }        
+        }
+
+        def expit(x: Double)= logistic(x)
     }
 }

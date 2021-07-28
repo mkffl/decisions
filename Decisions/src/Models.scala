@@ -16,7 +16,7 @@ object Dataset{
     trait EvaluationDataset extends DecisionDataset
 }
 
-object Systems{
+trait Systems{
     trait Transformer
     trait Recognizer extends Transformer
     trait Calibrator extends Transformer
@@ -34,7 +34,7 @@ object Systems{
 
 
 
-class SmileKitLearn[T](model: T){
+class SmileKitLearn[T](model: T) extends decisions.Shared.MathHelp{
     def predictproba(data: Array[Array[Double]]): Array[Double] = model match {
         case m:LogisticRegression => {
             val tempScore = new Array[Double](2) // 2 classes
@@ -71,7 +71,7 @@ class SmileKitLearn[T](model: T){
             m.predict(dataTupled, tempScore)
             tempScore(1)
         }
-        case m: SVM[Array[Double]] => m.score(data)
+        case m: SVM[Array[Double]] => expit(m.score(data))
     }
     def predictProba(data: Double): Double = model match {
         case m: IsotonicRegressionScaling => m.predict(data)

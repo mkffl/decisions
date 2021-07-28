@@ -22,7 +22,7 @@ import decisions.LinAlgebra._
 import decisions.SmileKitLearn._
 import decisions.SmileFrame._
 import decisions.Dataset._
-import decisions.Systems._
+//import decisions.Systems._
 import decisions.EvalUtils._
 
 
@@ -31,7 +31,8 @@ import decisions.EvalUtils._
 */
 trait CompareSystems extends decisions.Shared.LinAlg 
                         with decisions.Shared.MathHelp
-                        with decisions.Shared.FileIO{
+                        with decisions.Shared.FileIO
+                        with decisions.Systems{
     implicit def floatToDoubleRow(values: Row): Seq[Double] = values.toSeq
 
     def plotCCD(w1Data: Seq[Double], w2Data: Seq[Double], title: String="Class Conditional Densities") = {
@@ -84,7 +85,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
         val layout = Layout(
             title="APE",
             yaxis = Axis(
-                range = (0.0, 0.5),
+                range = (0.0, 0.2),
                 title = "Error Probability")
         )
         val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
@@ -149,71 +150,12 @@ trait CompareSystems extends decisions.Shared.LinAlg
     val rootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs/transactions_data"    
 
     /*
-    def getRecognizer(model: Recognizer, trainDF: DataFrame): (Array[Double] => Double) = model match {
-        case m: Logit => LogisticRegression.fit(formula, trainDF).predictProba //TODO: add properties
-        case m: RF => RandomForest.fit(formula, trainDF, m.params.getOrElse(new Properties())).predictProba
-        case m: SupportVectorMachine => { //TODO: add properties
-            val X = formula.x(trainDF).toArray
-            val y = formula.y(trainDF).toIntArray.map{case 0 => -1; case 1 => 1}
-            val kernel = new GaussianKernel(8.0)
-            SVM.fit(X, y, kernel, 5, 1E-3).predictProba
-        }            
-        }
-
-    def getCalibrator(model: Calibrator, pDev: Array[Double], yDev: Array[Int]): (Double => Double) = model match {
-            case Uncalibrated => x => x
-            case c: Isotonic => IsotonicRegressionScaling.fit(pDev, yDev).predict//.predictProba
-    }
-
-    /*
     ** y <-> ground truth
     ** x <-> predictors
     ** p <-> predicted probabilities (calibrated or not)
     ** lo <-> log-odds (calibrated or not)
     ** Hence loEvalCal refers to the calibrated log-odds predictions on the evaluation data
     ** TODO: check why the calibrated scores don't show improvements vs uncalibrated
-    */
-    def fitSystem(spec: System,
-                trainDF: DataFrame, 
-                xDev: Array[Array[Double]],
-                yDev: Array[Int],
-                xEval: Array[Array[Double]]
-    ) = {
-        // Fit and apply the recognizer
-        val recognizer = getRecognizer(spec._1, trainDF)
-        val pDev = xDev.map(recognizer)
-        val pEvalUncal = xEval.map(recognizer)
-        // Fit and apply the calibrator
-        val calibrator = getCalibrator(spec._2, pDev, yDev)
-        val loEvalCal = pEvalUncal.map(calibrator).map(logit)
-        loEvalCal
-    }
-
-    def evaluateSystem(spec: System, 
-                    lo: Array[Double],
-                    yEval: Vector[Int],
-                    priorLogOdds: Vector[Double]
-    ): APE = {
-        //val yEval = evalData.map({case Transaction(usertype, am, cnt) => usertype}).toVector
-        val (recog, calib) = spec
-        val recogName: String = recog match {case Logit(name, p) => name
-                case RF(name, p) => name
-                case SupportVectorMachine(name, p) => name
-        }
-        val calibName: String = calib match {case Isotonic(name) => name
-            case Platt(name) => name
-            case Uncalibrated => "Uncalibrated"}
-        val steppy = new SteppyCurve(lo.toVector, yEval, priorLogOdds)
-        val pav = new PAV(lo.toVector, yEval, priorLogOdds)
-        APE(recogName,
-            calibName,
-            priorLogOdds,
-            steppy.bayesErrorRate,
-            pav.bayesErrorRate,
-            pav.EER,
-            steppy.majorityErrorRate
-        )
-    }
     */
 
     def outcomeCost(Cmiss: Double, Cfa: Double, pred: Int, actual: Int) = pred match {
@@ -256,9 +198,9 @@ trait CompareSystems extends decisions.Shared.LinAlg
     object Estimator{
         // Instantiate the data shared across estimators
         val p_w1 = 0.3
-        val trainData: Seq[Transaction] = transact(p_w1).sample(5000)
-        val devData: Seq[Transaction] = transact(p_w1).sample(2000)
-        val evalData: Seq[Transaction] = transact(p_w1).sample(2000)
+        val trainData: Seq[Transaction] = transact(p_w1).sample(100)
+        val devData: Seq[Transaction] = transact(p_w1).sample(100_000)
+        val evalData: Seq[Transaction] = transact(p_w1).sample(20_000)
         val trainSchema = DataTypes.struct(
                 new StructField("label", DataTypes.IntegerType),
                 new StructField("f1", DataTypes.DoubleType),
@@ -338,8 +280,8 @@ object Bug14 extends CompareSystems{
         val rfParams = new Properties()
         rfParams.putAll(rfParams)
 
-        val calibExp = new Estimator( ( RF("rf", Some(rfParams)), Isotonic("isotonic")) ) 
-        val uncalibExp = new Estimator( ( RF("rf", Some(rfParams)), Uncalibrated) )
+        val calibExp = new Estimator( ( SupportVectorMachine("svm", None), Isotonic("isotonic")) ) 
+        val uncalibExp = new Estimator( ( SupportVectorMachine("svm", None), Uncalibrated) )
         val comb = calibExp.loEvalCal.zip(uncalibExp.loEvalCal).sortBy(tup => tup._1)
         (calibExp, uncalibExp)
 

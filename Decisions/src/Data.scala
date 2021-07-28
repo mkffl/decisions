@@ -28,7 +28,7 @@ object TransactionsData extends decisions.Shared.LinAlg{
            [ 1.,  1.,  1.,  1.,  1.], --w1
            [-1., -1.,  1., -1., -1.]]) --w1
     */
-    trait User
+    sealed trait User
     object Regular extends User
     object Fraudster extends User
     
