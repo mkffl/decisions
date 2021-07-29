@@ -174,6 +174,10 @@ trait CompareSystems extends decisions.Shared.LinAlg
 
     class Estimator(val spec: System){
         import Estimator._
+        // Expose eval for audit purposes
+        def getyEval = yEval
+        def getxEval = xEval
+        def getPrevalence = p_w1
         // Fit and apply the recognizer
         val recognizer = getRecognizer(spec._1, trainDF)
         val pDev = xDev.map(recognizer)
@@ -198,7 +202,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
     object Estimator{
         // Instantiate the data shared across estimators
         val p_w1 = 0.3
-        val trainData: Seq[Transaction] = transact(p_w1).sample(100)
+        val trainData: Seq[Transaction] = transact(p_w1).sample(1_000)
         val devData: Seq[Transaction] = transact(p_w1).sample(100_000)
         val evalData: Seq[Transaction] = transact(p_w1).sample(20_000)
         val trainSchema = DataTypes.struct(
@@ -282,10 +286,7 @@ object Bug14 extends CompareSystems{
 
         val calibExp = new Estimator( ( SupportVectorMachine("svm", None), Isotonic("isotonic")) ) 
         val uncalibExp = new Estimator( ( SupportVectorMachine("svm", None), Uncalibrated) )
-        val comb = calibExp.loEvalCal.zip(uncalibExp.loEvalCal).sortBy(tup => tup._1)
         (calibExp, uncalibExp)
-
-
         //import decisions.Bug14._; val (calibExp, uncalibExp) = modelCheck
         // not monotonous... investigate
     }
@@ -313,84 +314,86 @@ object Bug14 extends CompareSystems{
         (pavCalib, pavUncalib, data)
         //import decisions.Bug14._; val (pavCalib, pavUncalib, data) = pavCheck
     }
-    /*
-    def temp(args: Array[String]) = {
-        val p_w1 = 0.3
-        val trainData: Seq[Transact] = transact(p_w1).sample(20000)
-        val devData: Seq[Transact] = transact(p_w1).sample(10000)
-        val evalData: Seq[Transact] = transact(p_w1).sample(10000)
+    class Experiment(val e: Estimator,
+                     var p_w1: Double, 
+                     var Cmiss: Double, 
+                     var Cfa: Double){
+        import Experiment._
 
+        def theta = getTheta(p_w1, Cmiss, Cfa)
+        def thresholder: (Double => User) = lo => if (lo > -1*theta) {Fraudster} else {Regular}
 
-        val trainSchema = DataTypes.struct(
-                new StructField("label", DataTypes.IntegerType),
-                new StructField("f1", DataTypes.DoubleType),
-                new StructField("f2", DataTypes.DoubleType),
-                new StructField("f3", DataTypes.DoubleType),
-                new StructField("f4", DataTypes.DoubleType),
-                new StructField("f5", DataTypes.DoubleType),
-                new StructField("f6", DataTypes.DoubleType),
-                new StructField("f7", DataTypes.DoubleType),
-                new StructField("f8", DataTypes.DoubleType),
-                new StructField("f9", DataTypes.DoubleType),
-                new StructField("f10", DataTypes.DoubleType),
-        )        
+        def decisionMaker:(Array[Double] => User) = observation =>
+                e.recognizer.andThen(e.calibrator).andThen(logit).andThen(thresholder)(observation)
 
-        val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
-        val xDev = devData.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => Array(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)}.toArray
-        val xEval = evalData.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => Array(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)}.toArray
-        val yDev = devData.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => u}.toArray
-        val yEval = evalData.map({case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => u}).toVector    
-
-        val prop:  java.util.Map[String, String] = Map("smile.random.forest.trees" -> "100",
-            "smile.random.forest.mtry" -> "0",
-            "smile.random.forest.split.rule" -> "GINI",
-            "smile.random.forest.max.depth" -> "1000",
-            "smile.random.forest.max.nodes" -> "10000",
-            "smile.random.forest.node.size" -> "2",
-            "smile.random.forest.sample.rate" -> "1.0").asJava
-        val rfParams = new Properties()
-        rfParams.putAll(rfParams)
-
-        val simSpec = (SupportVectorMachine("svm", None), Isotonic("isotonic"))
-        val recognizer = getRecognizer(simSpec._1, trainDF)
-        val pDev = xDev.map(recognizer)
-        val pEvalUncal = xEval.map(recognizer)
-        val calibrator = getCalibrator(simSpec._2, pDev, yDev)
-        val loEvalCal = pEvalUncal.map(calibrator).map(logit)
-        val loEvalUncal = pEvalUncal.map(logit) 
-        
-        //plotReliability(loEvalUncal, yEval.toArray, loEvalCal, yEval.toArray) // OK
-        
-        val systems: Seq[Array[Double]] = for (spec <- Seq(simSpec)) yield fitSystem(spec, trainDF, xDev, yDev, xEval)
-        val apes: Seq[APE] = for ( (lo, spec) <- systems.zip(Seq(simSpec))) yield evaluateSystem(spec, lo, yEval, plo)
-        apes.foreach(plotAPE)
-        
-        (recognizer, calibrator, apes)
+        def simulate(nsamples: Int = 1_000): Distribution[Double] = for {
+                sample <- transact(p_w1).repeat(nsamples) // Asume true p_w1 == modeler's belief
+                decisions = sample.map(_.features.toArray).map(decisionMaker)
+                preds = sample.map(_.UserType).zip(decisions).map{case (a,b) => Decision(a,b)}
+            } yield pError(preds)
     }
 
-    def more = {
-        val (recognizer, calibrator, apes) = temp(Array(""))
-        val thetaTest = -0.75
-        val ploTest = logistic(thetaTest)
-        val thresh = -1.0*thetaTest
-        val thresholder: (Double => Int) = lo => if (lo > thresh) {1} else {0}        
-        val decisionMaker: (Array[Double] => Int) = recognizer.
-                andThen(calibrator).
-                andThen(logit).
-                andThen(thresholder)
+    object Experiment{
+        case class Decision(userType: User, decision: User)
+        def pError(d: Seq[Decision]): Double = d.count(o => o.userType != o.decision).toDouble / d.size
 
-        val verifyData = transact(ploTest).repeat(10)
-        /*
-        val riskExperiment = for {
-            data <- verifyData
-            x = data.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => Array(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10)}.toArray
-            y = data.map{case Transact(u,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10) => u}.toArray
-        } yield for {
-            (predictor, target) <- x.zip(y)
-            prediction = decisionMaker(predictor)
-            cost = outcomeCost(1, 1, prediction, target)
-        } yield cost
-        */
+        def getTheta(p_w1: Double, Cmiss: Double, Cfa: Double) = log(p_w1/(1-p_w1)*(Cmiss/Cfa))
+
+        def apply(e: Estimator,
+                     p_w1: Double, 
+                     Cmiss: Double, 
+                     Cfa: Double): Experiment = {
+                         val ex = new Experiment(e,p_w1,Cmiss,Cfa)
+                         ex
+                     }
     }
-    */
+
+    // val ex = Experiment(calibExp, 0.2, 100, 5) // theta = 1.609
+
+    object Reconciliation extends decisions.Shared.MathHelp{
+        import Experiment._
+
+        def getClosest(num: Double, listNums: Vector[Double]) =
+            listNums.minBy(v => math.abs(v - num))
+        def constructThreshold(theta: Double)(lo: Double): User = if (lo > -1*theta) {Fraudster} else {Regular}
+        def loModel:(Array[Double] => Double) = observation =>
+                calibExp.recognizer.andThen(calibExp.calibrator).andThen(logit)(observation)
+        val (calibExp, uncalibExp) = modelCheck
+        
+        // Application parameters
+        val p_w1=0.3; val Cmiss=100; val Cfa=5;
+        val ex = Experiment(calibExp, p_w1, Cmiss, Cfa)
+        val theta = getTheta(p_w1, Cmiss, Cfa)
+        val p_tilde_w1 = logistic(theta) // sample with this prior
+
+        val xData = transact(p_tilde_w1).sample(1_000)
+        val xEval = xData.map(_.features.toArray).toArray //calibExp.getxEval
+        val yEval = xData.map(_.UserType)//calibExp.getyEval
+        
+        val targetPrErr: Double = calibExp.getAPE.priorLogOdds.zip(calibExp.getAPE.observedDCF).minBy(tup => math.abs(tup._1-theta))._2
+
+        val loPreds = xEval.map(loModel)
+        val thresholder = constructThreshold(theta)(_)
+        
+        def getPmissPfa(theta: Double, lo: Vector[Double], labels: Vector[User]): Tuple2[Double,Double] = {
+            val thr = -1*theta
+            val tar = lo.zip(labels).filter(_._2==Fraudster).map(_._1)
+            val non = lo.zip(labels).filter(_._2==Regular).map(_._1)
+            val pMiss = tar.count(v => thr > v)/tar.size.toDouble
+            val pFa = non.count(v => thr < v)/non.size.toDouble
+            (pMiss, pFa)
+        }
+
+        val preds = loPreds.map(x => thresholder(x)).toVector
+
+        def prErr(theta: Double, pMisspFa: Tuple2[Double,Double]) = logistic(theta)*pMisspFa._1 + logistic(-theta)*pMisspFa._2  //using discrimination points
+
+        def accuracy(labels: Vector[User], hardPredictions: Vector[User]) = 
+            labels.zip(preds).count(tup => tup._1 != tup._2).toDouble / labels.size.toDouble //using False counts
+
+        val operatingPoint = getPmissPfa(theta, loPreds.toVector, yEval.toVector)
+        val check = prErr(theta, operatingPoint)
+        val acc = accuracy(yEval.toVector, preds)
+
+    }
 }

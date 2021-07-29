@@ -60,8 +60,7 @@ object TransactionsData extends decisions.Shared.LinAlg{
 
     def repeat(base: Row): Row = dot(Matrix(base),redundant).head
 
-    def transact(p_w1: Double): probability_monad.Distribution[Transaction] = {
-        for {
+    def transact(p_w1: Double): probability_monad.Distribution[Transaction] = for {
             userDraw <- Distribution.bernoulli(p_w1)
             ut = if (userDraw==1){Fraudster} else Regular
             cluster <- Distribution.bernoulli(0.5)
@@ -76,7 +75,6 @@ object TransactionsData extends decisions.Shared.LinAlg{
             repeats = repeat(base)
             features = base ++ repeats // Vector of size 10
         } yield Transaction(ut,features)
-    }
 
 
 
