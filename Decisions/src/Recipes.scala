@@ -32,7 +32,8 @@ import decisions.EvalUtils._
 trait CompareSystems extends decisions.Shared.LinAlg 
                         with decisions.Shared.MathHelp
                         with decisions.Shared.FileIO
-                        with decisions.Systems{
+                        with decisions.Systems
+                        with decisions.Shared.Validation{
     implicit def floatToDoubleRow(values: Row): Seq[Double] = values.toSeq
 
     def plotCCD(w1Data: Seq[Double], w2Data: Seq[Double], title: String="Class Conditional Densities") = {
@@ -158,20 +159,6 @@ trait CompareSystems extends decisions.Shared.LinAlg
     ** TODO: check why the calibrated scores don't show improvements vs uncalibrated
     */
 
-    def outcomeCost(Cmiss: Double, Cfa: Double, pred: Int, actual: Int) = pred match {
-            case 1 if actual == 0 => Cfa
-            case 0 if actual == 1 => Cmiss
-            case _ => 0.0
-    }
-
-    def DCF(Cmiss: Double, Cfa: Double)(yhat: Vector[Int], y: Vector[Int]): Double = {
-        val costs = for {
-            (pred, actual) <- yhat.zip(y)
-            cost = outcomeCost(Cmiss, Cfa, pred, actual)
-            } yield cost
-        costs.sum / costs.size.toFloat        
-    }
-
     class Estimator(val spec: System){
         import Estimator._
         // Expose eval for audit purposes
@@ -197,6 +184,13 @@ trait CompareSystems extends decisions.Shared.LinAlg
             pav.EER,
             steppy.majorityErrorRate
         )
+        // Expose models
+        def pCalibrated:(Array[Double] => Double) = recognizer andThen calibrator
+        def loCalibrated:(Array[Double] => Double) = pCalibrated andThen logit
+        def hardCalibrated(theta: Double):(Array[Double] => User) = {
+            val thresholder: (Double => User) = lo => if (lo > -1*theta) {Fraudster} else {Regular}
+            loCalibrated andThen thresholder        
+        }
     }
 
     object Estimator{
@@ -269,112 +263,70 @@ val uncalibExp = new Estimator( ( SupportVectorMachine("svm", None), Uncalibrate
 */
 
 object Bug14 extends CompareSystems{
-    def modelCheck = {
-        // one calib and one non calibrated model
-        // assert that calibrated scores are monotonous
-        //Note: svm returns negative probabilities
 
-        val prop:  java.util.Map[String, String] = Map("smile.random.forest.trees" -> "100",
-            "smile.random.forest.mtry" -> "0",
-            "smile.random.forest.split.rule" -> "GINI",
-            "smile.random.forest.max.depth" -> "1000",
-            "smile.random.forest.max.nodes" -> "10000",
-            "smile.random.forest.node.size" -> "2",
-            "smile.random.forest.sample.rate" -> "1.0").asJava
-        val rfParams = new Properties()
-        rfParams.putAll(rfParams)
-
-        val calibExp = new Estimator( ( SupportVectorMachine("svm", None), Isotonic("isotonic")) ) 
-        val uncalibExp = new Estimator( ( SupportVectorMachine("svm", None), Uncalibrated) )
-        (calibExp, uncalibExp)
-        //import decisions.Bug14._; val (calibExp, uncalibExp) = modelCheck
-        // not monotonous... investigate
-    }
-
-    def pavCheck = {
-        import decisions.TransactionsData._ 
-
-        def getLogodds(label: Int) = label match {
-            case 0 => Distribution.normal
-            case 1 => Distribution.normal*1.5 + 2.0
-        }
-        def lodds = for {
-            label <- Distribution.bernoulli(0.5)
-            lo <- getLogodds(label)
-        } yield (label, lo)
-        def monot_func(x: Double) = 1/(1+scala.math.exp(-1.5*x+2))
-
-        val data = lodds.sample(2000)
-        val lo = data.map(_._2).toVector
-        val loUncalib = data.map(_._2).map(monot_func).toVector
-        val y = data.map(_._1).toVector
-
-        val pavCalib = new PAV(lo, y, Estimator.plodds)
-        val pavUncalib = new PAV(loUncalib, y, Estimator.plodds)
-        (pavCalib, pavUncalib, data)
-        //import decisions.Bug14._; val (pavCalib, pavUncalib, data) = pavCheck
-    }
-    class Experiment(val e: Estimator,
-                     var p_w1: Double, 
-                     var Cmiss: Double, 
-                     var Cfa: Double){
+/** Represents attempts to validate the observed Bayes Error with simuations using the
+  * the true data generation process for chosen application parameters.
+  * 
+  * {{
+        val calibrated = new Estimator((SupportVectorMachine("svm", None), Isotonic("isotonic")))
+        val pa = AppParameters(0.3,100,5)
+        val ex = Reconciliation(calibrated, pa)
+        ex.simulate(500).hist // Observe simulation results
+        ex.inferRiskFromAPE // Compare with APE data
+  * }}
+  * 
+  * @param e APE estimator that includes the trained system and the BER estimates
+  * @param p The application parameters to validate
+  */
+    class Reconciliation(val e: Estimator,
+                         var p: AppParameters
+    ){
         import Experiment._
 
-        def theta = getTheta(p_w1, Cmiss, Cfa)
-        def thresholder: (Double => User) = lo => if (lo > -1*theta) {Fraudster} else {Regular}
-
-        def decisionMaker:(Array[Double] => User) = observation =>
-                e.recognizer.andThen(e.calibrator).andThen(logit).andThen(thresholder)(observation)
+        val theta = paramToTheta(p)
+        val decisionMaker:(Array[Double] => User) = e.hardCalibrated(theta)
 
         def simulate(nsamples: Int = 1_000): Distribution[Double] = for {
-                sample <- transact(p_w1).repeat(nsamples) // Asume true p_w1 == modeler's belief
-                decisions = sample.map(_.features.toArray).map(decisionMaker)
-                preds = sample.map(_.UserType).zip(decisions).map{case (a,b) => Decision(a,b)}
-            } yield pError(preds)
+                sample <- transact(p.p_w1).repeat(nsamples) // Asume true p_w1 == modeler's belief
+                predictions = sample.map(_.features.toArray).map(decisionMaker)
+                totalCost = sample.map(_.UserType).zip(predictions).map(tup => cost(p,tup._1,tup._2)).reduceLeft(_+_)
+            } yield totalCost / nsamples.toDouble
+
+        def inferRiskFromAPE: Double = {
+            val priorRisk = getPriorRisk(p)
+            val targetPrErr = getClosestPrErr(e, theta)
+            targetPrErr * priorRisk
+        }            
     }
 
-    object Experiment{
-        case class Decision(userType: User, decision: User)
-        def pError(d: Seq[Decision]): Double = d.count(o => o.userType != o.decision).toDouble / d.size
-
-        def getTheta(p_w1: Double, Cmiss: Double, Cfa: Double) = log(p_w1/(1-p_w1)*(Cmiss/Cfa))
-
-        def apply(e: Estimator,
-                     p_w1: Double, 
-                     Cmiss: Double, 
-                     Cfa: Double): Experiment = {
-                         val ex = new Experiment(e,p_w1,Cmiss,Cfa)
-                         ex
-                     }
-    }
-
-    // val ex = Experiment(calibExp, 0.2, 100, 5) // theta = 1.609
-
-    object Reconciliation extends decisions.Shared.MathHelp{
-        import Experiment._
+    object Reconciliation{
+        def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
 
         def getClosest(num: Double, listNums: Vector[Double]) =
             listNums.minBy(v => math.abs(v - num))
-        def constructThreshold(theta: Double)(lo: Double): User = if (lo > -1*theta) {Fraudster} else {Regular}
-        def loModel:(Array[Double] => Double) = observation =>
-                calibExp.recognizer.andThen(calibExp.calibrator).andThen(logit)(observation)
-        val (calibExp, uncalibExp) = modelCheck
-        
-        // Application parameters
-        val p_w1=0.3; val Cmiss=100; val Cfa=5;
-        val ex = Experiment(calibExp, p_w1, Cmiss, Cfa)
-        val theta = getTheta(p_w1, Cmiss, Cfa)
-        val p_tilde_w1 = logistic(theta) // sample with this prior
 
-        val xData = transact(p_tilde_w1).sample(1_000)
-        val xEval = xData.map(_.features.toArray).toArray //calibExp.getxEval
-        val yEval = xData.map(_.UserType)//calibExp.getyEval
-        
-        val targetPrErr: Double = calibExp.getAPE.priorLogOdds.zip(calibExp.getAPE.observedDCF).minBy(tup => math.abs(tup._1-theta))._2
+        def getPriorRisk(p: AppParameters): Double = p.p_w1*p.Cmiss + (1-p.p_w1)*p.Cfa
 
-        val loPreds = xEval.map(loModel)
-        val thresholder = constructThreshold(theta)(_)
-        
+        def getClosestPrErr(e: Estimator, theta: Double): Double = 
+            e.getAPE.priorLogOdds.zip(e.getAPE.observedDCF).minBy(tup => math.abs(tup._1-theta))._2
+
+
+        def apply(e: Estimator,
+                     p: AppParameters): Experiment = {
+                         val ex = new Experiment(e,p)
+                         ex
+        }
+    }
+    object Reconciliate {
+        import Experiment._
+
+
+        // move to evaluations
+        def prErr(plo: Double, pMisspFa: Tuple2[Double,Double]) = plo*pMisspFa._1 + (1-plo)*pMisspFa._2  //using discrimination points
+        // move to evaluations
+        def accuracy(labels: Vector[User], hardPredictions: Vector[User]) = 
+            labels.zip(hardPredictions).count(tup => tup._1 != tup._2).toDouble / labels.size.toDouble //using False counts        
+
         def getPmissPfa(theta: Double, lo: Vector[Double], labels: Vector[User]): Tuple2[Double,Double] = {
             val thr = -1*theta
             val tar = lo.zip(labels).filter(_._2==Fraudster).map(_._1)
@@ -383,17 +335,33 @@ object Bug14 extends CompareSystems{
             val pFa = non.count(v => thr < v)/non.size.toDouble
             (pMiss, pFa)
         }
+      
 
+        // 1. Load model
+        val (calibExp, uncalibExp) = modelCheck
+        
+        // 2. Set some application parameters
+        val pa = AppParameters(0.3,100,5)
+        // 3. Find the expected risk
+        val targetRisk = findTargetRisk(pa)
+
+        // 4. Run the simulation and compare the results
+        val ex = Reconciliation(calibExp, pa)
+        ex.simulate(500).hist
+
+        //val xData = transact(p_tilde_w1).sample(1_000)
+        //val xEval = xData.map(_.features.toArray).toArray //calibExp.getxEval
+        //val yEval = xData.map(_.UserType)//calibExp.getyEval
+
+        def makeParams(pa: Tuple3[Double,Double,Double]): AppParameters = AppParameters(pa._1,pa._2,pa._3)
+
+        /*
         val preds = loPreds.map(x => thresholder(x)).toVector
-
-        def prErr(theta: Double, pMisspFa: Tuple2[Double,Double]) = logistic(theta)*pMisspFa._1 + logistic(-theta)*pMisspFa._2  //using discrimination points
-
-        def accuracy(labels: Vector[User], hardPredictions: Vector[User]) = 
-            labels.zip(preds).count(tup => tup._1 != tup._2).toDouble / labels.size.toDouble //using False counts
 
         val operatingPoint = getPmissPfa(theta, loPreds.toVector, yEval.toVector)
         val check = prErr(theta, operatingPoint)
         val acc = accuracy(yEval.toVector, preds)
+        */
 
     }
 }

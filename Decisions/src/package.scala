@@ -3,6 +3,7 @@ package decisions
 import smile.math.MathEx.{log}
 import java.io._
 import smile.math.MathEx.{logistic, min, log}
+import decisions.TransactionsData._
 
 package object Shared{
     trait FileIO {
@@ -72,5 +73,15 @@ package object Shared{
         }
 
         def expit(x: Double)= logistic(x)
+    }
+
+    trait Validation {
+        case class AppParameters(p_w1: Double, Cmiss: Double, Cfa: Double)
+
+        def cost(p: AppParameters, actual: User, pred: User): Double = pred match {
+                case Fraudster if actual == Regular => p.Cfa
+                case Regular if actual == Fraudster => p.Cmiss
+                case _ => 0.0
+        }
     }
 }

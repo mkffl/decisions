@@ -42,6 +42,7 @@ object LinAlgebra {
             yield row zip col map Function.tupled(_*_) reduceLeft (_+_)
     }
 
+    // This is element-wise multply (np.multiply)
     def dotProduct(A: Matrix, B: Matrix) = {
         for ( (rowA, rowB) <- A zip B)
         yield rowA zip rowB map Function.tupled(_*_) reduceLeft (_+_)
