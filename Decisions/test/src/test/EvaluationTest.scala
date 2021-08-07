@@ -10,7 +10,7 @@ import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 
 import decisions._
-import decisions.utils._
+import decisions.EvalUtils._
 import java.io._
 
 trait TestHelper {    
@@ -31,9 +31,6 @@ object helper {
         val yDevT = Array(1, 1, 0, 1, 1, 0, 0, 0, 1)
         val expectedFrequency = Seq((0.32 + 0.38 + 0.30)/3.0, (0.65 + 0.64)/2.0 + (0.85 + 0.89)/2.0 + (0.98 + 0.90)/2.0)
         val expectedAccuracy = Seq((0 + 0 + 1)/3.0, (0 + 1)/2.0 + (1 + 0)/2.0 + (1 + 1)/2.0)
-        
-          
-
     }
 
 
@@ -42,25 +39,25 @@ object helper {
 
         val targets = for {
             logOdds <- RepeatableDistribution.normal
-            theta_1 = 2.0 + 2.0*s
-            } yield score
+            theta_1 = 2.0 + 2.0*logOdds
+            } yield theta_1
 
         val nonTargets = for {
             logOdds <- RepeatableDistribution.normal
-            theta_2 = -2.0 + 2.0*s
-            } yield score
+            theta_2 = -2.0 + 2.0*logOdds
+            } yield theta_2
 
-        val scores = (targets.sample(100) ++ nonTargets.sample(10000)).toVector
-        val pos: IndexedSeq[Int]  = for (i <- 1 to 100) yield 1 
+        val scores = (targets.sample(2000) ++ nonTargets.sample(10000)).toVector
+        val pos: IndexedSeq[Int]  = for (i <- 1 to 2000) yield 1 
         val neg: IndexedSeq[Int]  = for (i <- 1 to 10000) yield 0
         val labels = pos.toVector ++ neg.toVector
 
         (scores, labels)
     }
     // Values from PYLLR after runnning the scores likelihoods generated above
-    val steppyBer = Vector(0.07964, 0.10648, 0.12938, 0.15323, 0.16108, 0.15174, 0.13339, 0.10423, 0.08058)//Vector(0.11920292, 0.18242552, 0.26894142, 0.01937754, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
-    val steppyMajorityErrorRate = Vector(0.1192 , 0.18243, 0.26894, 0.37754, 0.5    , 0.37754, 0.26894, 0.18243, 0.1192)//Vector(0.11920292, 0.18242552, 0.26894142, 0.37754067, 0.5, 0.37754067, 0.26894142, 0.18242552, 0.11920292)
-    val convexHullBER = Vector(0.07786, 0.10498, 0.12881, 0.14919, 0.15868, 0.14731, 0.128, 0.10397, 0.07802)//Vector(0.01169, 0.01416, 0.0169 , 0.01811, 0.01455, 0.01099, 0.00783, 0.00531, 0.00347)
+    val steppyBer = Vector(0.07743527, 0.10648799, 0.13123004, 0.15037729, 0.16095   , 0.15255076, 0.1316486 , 0.10093192, 0.07696708)
+    val steppyMajorityErrorRate = Vector(0.1192 , 0.18243, 0.26894, 0.37754, 0.5    , 0.37754, 0.26894, 0.18243, 0.1192)
+    val convexHullBER = Vector(0.07697106, 0.10429837, 0.1300508 , 0.14831377, 0.15985   , 0.15136779, 0.13088949, 0.10054549, 0.07478175)
     val eer = 0.1603176277530788
 
 
@@ -71,7 +68,7 @@ object helper {
     }
 }
 
-object EvaluationsTests extends TestSuite with TestHelper{
+object EvaluationsTests extends TestSuite with TestHelper{ // add EvalUtils as Trait
     def tests = Tests {
         test("ErrorEstimators"){
             // Based on the ROCAnalysis Julia package: https://nbviewer.jupyter.org/github/davidavdav/ROCAnalysis.jl/blob/master/ROCAnalysis.ipynb
@@ -93,20 +90,20 @@ object EvaluationsTests extends TestSuite with TestHelper{
             test("minDCF"){
                 implicit val precision = Precision(0.01)
                 val result = convexHull.bayesErrorRate
-                val expect = helper.convexHullBER
+                val expected = helper.convexHullBER
                 assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size)
             }
             test("EER"){
                 implicit val precision = Precision(0.01)
                 val result = convexHull.EER
-                val expect = helper.eer
-                assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size)
+                val expected = helper.eer
+                assert(expected ~= result)
             }
         }
         test("minimizeScalar") {
             // Based on the scipy docs: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize_scalar.html#scipy.optimize.minimize_scalar
             val f: (Double => Double) = x => (x - 2) * x * (x + 2)*(x + 2)
-            val optimized = new utils.BrentOptimizerScalarWrapper(f, -5, 5, minimize=true)
+            val optimized = new BrentOptimizerScalarWrapper(f, -5, 5, minimize=true)
             val pointExpected = 1.2807764040333458
             val valueExpected = -9.914949590828147
 
@@ -116,7 +113,7 @@ object EvaluationsTests extends TestSuite with TestHelper{
         }
         test("PAVwrapper"){
             // The test case data is based on "PAV and the ROC convex hull" by Fawcett & Niculescu
-            val pavFit = new utils.PairAdjacentViolatorsWrapper(helper.PAVTestData.x, helper.PAVTestData.y)
+            val pavFit = new PairAdjacentViolatorsWrapper(helper.PAVTestData.x, helper.PAVTestData.y)
             val result = for {
                 bin <- pavFit.bins
                 numValues = bin.getWeight.toInt
@@ -129,7 +126,7 @@ object EvaluationsTests extends TestSuite with TestHelper{
         }
 
         test("CalibrationError"){
-            val metrics = binnedAccuracy(helper.ECE.pDevT, helper.ECE.yDevT)
+            val metrics = binnedAccuracy(helper.ECE.pDevT, helper.ECE.yDevT, EvalUtils.binBy0_10)
             val resultAccuracy = metrics.map(_.accuracy)
             val resultFrequency = metrics.map(_.frequency)
             val expectedAccuracy = helper.ECE.expectedAccuracy
