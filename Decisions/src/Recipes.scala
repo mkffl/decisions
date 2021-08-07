@@ -95,6 +95,24 @@ trait CompareSystems extends decisions.Shared.LinAlg
         }
     }
 
+    // priors should be probabilities for easier interpretation
+    def plotRisks(priors: Vector[Double], risks: Vector[Double]): Unit = {
+        val riskTrace = Scatter(
+            priors,
+            risks,
+            name = "Estimated Risks",
+            mode = ScatterMode(ScatterMode.Lines)
+        )
+        val layout = Layout(
+            title="Risks",
+            yaxis = Axis(
+                title = "Expected Risks")
+        )
+        val data = Seq(riskTrace)
+
+        Plotly.plot(s"$plotlyRootP/expected_risk.html", data, layout)        
+    }
+
     def prepReliabilityPlot(lo: Array[Double],
                         y: Array[Int]
     ): Tuple2[Array[Double], Array[Double]] = {
@@ -276,12 +294,12 @@ object Bug14 extends CompareSystems{
   * }}
   * 
   * @param e APE estimator that includes the trained system and the BER estimates
-  * @param p The application parameters to validate
+  * @param p Application parameter inputs used for validation
   */
     class Reconciliation(val e: Estimator,
                          var p: AppParameters
     ){
-        import Experiment._
+        import Reconciliation._
 
         val theta = paramToTheta(p)
         val decisionMaker:(Array[Double] => User) = e.hardCalibrated(theta)
@@ -294,7 +312,8 @@ object Bug14 extends CompareSystems{
 
         def inferRiskFromAPE: Double = {
             val priorRisk = getPriorRisk(p)
-            val targetPrErr = getClosestPrErr(e, theta)
+            val i = getClosestIndex(e.getAPE.priorLogOdds, theta)
+            val targetPrErr = e.getAPE.observedDCF(i)
             targetPrErr * priorRisk
         }            
     }
@@ -302,23 +321,26 @@ object Bug14 extends CompareSystems{
     object Reconciliation{
         def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
 
-        def getClosest(num: Double, listNums: Vector[Double]) =
-            listNums.minBy(v => math.abs(v - num))
-
         def getPriorRisk(p: AppParameters): Double = p.p_w1*p.Cmiss + (1-p.p_w1)*p.Cfa
 
-        def getClosestPrErr(e: Estimator, theta: Double): Double = 
-            e.getAPE.priorLogOdds.zip(e.getAPE.observedDCF).minBy(tup => math.abs(tup._1-theta))._2
-
+        /** Find index of closest number from the target in a list
+          * {{
+          * val target = 3.2
+          * val nums = List(-2.0, 3.0, 4.0)
+          * getClosestIndex(nums, target) // returns 1
+          * }}
+          */
+        def getClosestIndex(nums: Seq[Double], target: Double): Integer = 
+            nums.zipWithIndex.minBy(tup => math.abs(tup._1-target))._2
 
         def apply(e: Estimator,
-                     p: AppParameters): Experiment = {
-                         val ex = new Experiment(e,p)
+                     p: AppParameters): Reconciliation = {
+                         val ex = new Reconciliation(e,p)
                          ex
         }
     }
     object Reconciliate {
-        import Experiment._
+        import Reconciliation._
 
 
         // move to evaluations
@@ -338,24 +360,32 @@ object Bug14 extends CompareSystems{
       
 
         // 1. Load model
-        val (calibExp, uncalibExp) = modelCheck
-        
-        // 2. Set some application parameters
+        val calibrated = new Estimator((SupportVectorMachine("svm", None), Isotonic("isotonic")))
         val pa = AppParameters(0.3,100,5)
-        // 3. Find the expected risk
-        val targetRisk = findTargetRisk(pa)
-
-        // 4. Run the simulation and compare the results
-        val ex = Reconciliation(calibExp, pa)
-        ex.simulate(500).hist
-
-        //val xData = transact(p_tilde_w1).sample(1_000)
-        //val xEval = xData.map(_.features.toArray).toArray //calibExp.getxEval
-        //val yEval = xData.map(_.UserType)//calibExp.getyEval
+        val ex = Reconciliation(calibrated, pa)
 
         def makeParams(pa: Tuple3[Double,Double,Double]): AppParameters = AppParameters(pa._1,pa._2,pa._3)
 
+        def getRisks(priors: Vector[Double], Cmiss: Double, Cfa: Double, plos: Vector[Double], dcf: Vector[Double]) = {
+            val pr = for (prior <- priors) yield AppParameters(prior, Cmiss, Cfa)
+            val thetas = pr map paramToTheta
+            val prRisks = pr map getPriorRisk
+            val is: Vector[Integer] = thetas.map(t => getClosestIndex(plos, t))
+            val targets = is.map(index => dcf(index))
+            targets zip prRisks map Function.tupled(_*_)
+        }
+
+        object plotRisks{
+            val priors: Vector[Double] = ???
+            val Cmiss = 100
+            val Cfa = 5
+            val plos: Vector[Double] = ???
+            val bers: Vector[Double] = ???
+
+        }
         /*
+        pr => thetas => map getClosestPlo => dcf.apply
+
         val preds = loPreds.map(x => thresholder(x)).toVector
 
         val operatingPoint = getPmissPfa(theta, loPreds.toVector, yEval.toVector)
