@@ -5,22 +5,7 @@ import scala.util
 import smile.classification._
 
 object TransactionsData extends decisions.Shared.LinAlg{
-    def gaussianFeature(loc: Double)(userType: Int) = userType match {
-        case 0 => Distribution.normal + loc
-        case 1 => Distribution.normal - loc
-    }
-
-    def feat1 = gaussianFeature(1.0)(_)
-    def feat2 = gaussianFeature(1.5)(_)
-    def feat3 = gaussianFeature(0.8)(_)
-    def feat4 = gaussianFeature(-2.0)(_)
-    def feat5 = gaussianFeature(-1.0)(_)
-
-    case class Transact(userType: Int, 
-        f1: Double, f2: Double, f3: Double, f4: Double, f5: Double, 
-        f6: Double, f7: Double, f8: Double, f9: Double, f10: Double
-    )
-    
+    import RowLinAlg._, MatLinAlg._   
     /*
         f1    f2   f3   f4   f5
     array([[ 1., -1., -1., -1.,  1.], --w0
@@ -51,29 +36,30 @@ object TransactionsData extends decisions.Shared.LinAlg{
     val redundant = Matrix(r1,r2,r3,r4,r5)
 
 
-    def shiftCentroid(ut: User, cluster: Cluster, base: Row): Row = (ut, cluster) match {
-        case (Regular, Cluster1) => addVectors(f1,base)
-        case (Regular, Cluster2) => addVectors(f2,base)
-        case (Fraudster, Cluster1) => addVectors(f3,base)
-        case (Fraudster, Cluster2) => addVectors(f4,base)
+    def shiftCentroid(ut: User, cluster: Cluster, noise: Row): Row = (ut, cluster) match {
+        case (Regular, Cluster1) => f1 + noise
+        case (Regular, Cluster2) => f2 + noise
+        case (Fraudster, Cluster1) => f3 + noise
+        case (Fraudster, Cluster2) => f4 + noise
     }
 
-    def repeat(base: Row): Row = dot(Matrix(base),redundant).head
+    /* Linear transformation of informative features */
+    def repeat(base: Row): Row = (Matrix(base) at redundant).head
 
     def transact(p_w1: Double): probability_monad.Distribution[Transaction] = for {
             userDraw <- Distribution.bernoulli(p_w1)
             ut = if (userDraw==1){Fraudster} else Regular
             cluster <- Distribution.bernoulli(0.5)
             cl = if (cluster==1){Cluster1} else Cluster2
-            f1 <- Distribution.normal
-            f2 <- Distribution.normal
-            f3 <- Distribution.normal
-            f4 <- Distribution.normal
-            f5 <- Distribution.normal
-            gaussianValues = Vector(f1,f2,f3,f4,f5)
-            base = shiftCentroid(ut, cl, gaussianValues) // Vector of size 5
-            repeats = repeat(base)
-            features = base ++ repeats // Vector of size 10
+            g1 <- Distribution.normal
+            g2 <- Distribution.normal
+            g3 <- Distribution.normal
+            g4 <- Distribution.normal
+            g5 <- Distribution.normal
+            gaussian = Vector(g1,g2,g3,g4,g5)
+            informative = shiftCentroid(ut, cl, gaussian) // Vector of size 5
+            repeats = repeat(informative)
+            features = informative ++ repeats // Vector of size 10
         } yield Transaction(ut,features)
 
 

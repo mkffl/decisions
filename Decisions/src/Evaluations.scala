@@ -15,42 +15,6 @@ import org.apache.commons.math3.optim.univariate.SearchInterval
 import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction
 import org.apache.commons.math3.optim.univariate.BrentOptimizer 
 
-object LinAlgebra {
-    // TODO: find out how to use package objects 
-    type Row = Vector[Double]
-    type Matrix = Vector[Vector[Double]]
-
-    def Row(xs: Int*) = Vector(xs: _*)
-    def Matrix(xs: Row*) = Vector(xs: _*)
-
-    implicit def intToDouble(mat: Vector[Vector[Int]]): Matrix = 
-        for (row <- mat) 
-            yield for (value <- row) 
-                yield value.toDouble
-    
-    implicit def floatToDoubleRow(row: Vector[Float]): Row = 
-        for (value <- row)
-                yield value.toDouble
-
-    /* Matrix product operation
-    If matrix A is (m,n) and B is (n,p) then output is (m,p)
-    Input matrices must be (m,n) and (n,p).
-    */
-    def matMul(A: Matrix, B: Matrix) = {
-        for (row <- A) // (m,n)
-        yield for(col <- B.transpose) // rotate to (p,n) to loop thru the cols
-            yield row zip col map Function.tupled(_*_) reduceLeft (_+_)
-    }
-
-    // This is element-wise multply (np.multiply)
-    def dotProduct(A: Matrix, B: Matrix) = {
-        for ( (rowA, rowB) <- A zip B)
-        yield rowA zip rowB map Function.tupled(_*_) reduceLeft (_+_)
-    }
-}
-
-
-
 /*
 Every error estimator needs a logodds to probability converter
 Optimal errors need convex hull coordinates to make calculation more efficient
@@ -60,24 +24,23 @@ The curve is the latent representation; a representation of the classifier in th
 (pFa, pMiss space). The observed errors don't explicitly compute the operating points
 from the scores but do compute them from the prior log-odds (equivalent??)
 */
-trait ErrorEstimator {
-    import LinAlgebra._
-
-    def logoddsToProbability(priorLogOdds: Vector[Double]): Matrix = {
+trait ErrorEstimator extends decisions.Shared.LinAlg
+                     with decisions.Shared.MathHelp{
+    def logoddsToProbability(priorLogOdds: Row): Matrix = {
         val pTar: Row = priorLogOdds.map(logistic)
         val pNon: Row = priorLogOdds.map(x => logistic(-x))
-        Vector(pTar, pNon)
+        Matrix(pTar, pNon)
     }
     def bayesErrorRate: Row
 }
 
 class SteppyCurve(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ErrorEstimator {
-        import LinAlgebra._
+        import RowLinAlg._, MatLinAlg._
 
-        val PP = logoddsToProbability(priorLogOdds).transpose
-        val pMisspFa = EvalUtils.pMisspFaPoints(scores, labels, priorLogOdds).transpose
-        def bayesErrorRate = dotProduct(PP, pMisspFa) //dot product or 'dotProductSum'?
-        def majorityErrorRate = PP.map(row => row.min)
+        val PP: Matrix = logoddsToProbability(priorLogOdds)
+        val pMisspFa = EvalUtils.pMisspFaPoints(scores, labels, priorLogOdds)
+        def bayesErrorRate = PP.transpose * pMisspFa.transpose map{case e: Row => e reduceLeft(_+_)}
+        def majorityErrorRate = PP.transpose.map(row => row.min)
 }
 
 trait ConvexHull extends ErrorEstimator {
@@ -85,7 +48,7 @@ trait ConvexHull extends ErrorEstimator {
 }
 
 class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Double]) extends ConvexHull {
-    import LinAlgebra._
+    import RowLinAlg._, MatLinAlg._
 
     private def countTargets: Vector[Int] =
         pavFit.bins.map{case po: Point => po.getWeight.toDouble * po.getY toInt}
@@ -112,31 +75,30 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
 
     /*
     *  PP is (2,m)
-    */
-
+    */   
     def bayesErrorRate: Row = {
         val PP = logoddsToProbability(priorLogOdds)
-        EvalUtils.minSumProd(PP, pMisspFa)
-    }
-    
-    def bayesErrorRateOld(PP: Matrix): Row = {
-        val E = matMul(PP.transpose, pMisspFa)
+        val E = PP.transpose at pMisspFa
         val ber = for (err <- E) yield err.min
         ber
     }
     def EER: Double = {
         val objectiveFunction: (Double => Double) = x => {
             val PP: Matrix = logoddsToProbability(Vector(x))
-            val minn: Row = EvalUtils.minSumProd(PP, pMisspFa)
+            val E = PP.transpose at pMisspFa
+            val minn: Row = for (err <- E) yield err.min
             minn(0)
         }
         val maximised = new EvalUtils.BrentOptimizerScalarWrapper(objectiveFunction, priorLogOdds(0), priorLogOdds.last, minimize=false)
         maximised.optimumValue
     }
+
+    def scoreVSlogodds: Tuple2[Row, Row] = pavFit.bins.map{case po => (po.getX, logit(po.getY))}.unzip
 }
 
 
 object EvalUtils extends decisions.Shared.LinAlg{
+    import RowLinAlg._, MatLinAlg._
     /*  - Method to get the PAV bins, i.e. the PAV-merged points.
         - Handle kotlin to scala type conversion to hide it from the main PAV class.
     */
@@ -238,12 +200,6 @@ object EvalUtils extends decisions.Shared.LinAlg{
         val pFa = for ((r,v) <- rkD2 zip DdownTo1) yield (N - r.toFloat + v) / N
         //(pMiss.map(_.toDouble).toVector, pFa.map(_.toDouble).toVector)
         Vector(pMiss.toVector, pFa.toVector)
-    }
-
-    def minSumProd(A: Matrix, B: Matrix): Row = {
-        val product = matMul(A.transpose, B)
-        val minn = for (row <- product) yield row.min
-        minn
     }
 }
 

@@ -18,7 +18,6 @@ import smile.math.kernel.GaussianKernel
 import plotly._, element._, layout._, Plotly._ 
 
 import decisions.TransactionsData._
-import decisions.LinAlgebra._
 import decisions.SmileKitLearn._
 import decisions.SmileFrame._
 import decisions.Dataset._
@@ -93,6 +92,30 @@ trait CompareSystems extends decisions.Shared.LinAlg
 
         Plotly.plot(s"$plotlyRootP/ape.html", data, layout)
         }
+    }
+
+    def plotLLR(scores: Row, llr: Row, minTheta: Double): Unit = {
+        val llrTrace = Scatter(
+            scores,
+            llr,
+            name = "Log Likelihood Ratio i.e. log P(x|ω1)/P(x|ω0)",
+            mode = ScatterMode(ScatterMode.Lines)
+        )
+        val minThetaTrace = Scatter(
+            scores,
+            for (it <- 1 to scores.size) yield minTheta,
+            name = "-θ i.e. -log P(ω1)/P(ω0)*Cmiss/Cfa",
+            mode = ScatterMode(ScatterMode.Lines, ScatterMode.Markers)
+        )
+        val layout = Layout(
+            title="Scores vs Log Likelihood Ratio",
+            yaxis = Axis(
+                range = (-5, +5),
+                title = "LLR")
+        )
+        val data = Seq(llrTrace, minThetaTrace)
+
+        Plotly.plot(s"$plotlyRootP/llr.html", data, layout)
     }
 
     // priors should be probabilities for easier interpretation
@@ -274,11 +297,53 @@ trait CompareSystems extends decisions.Shared.LinAlg
 
 }
 
-/*
-import decisions.Systems._; import decisions.CompareSystems._; val calibExp = new Estimator( ( SupportVectorMachine("svm", None), Isotonic("isotonic")) ) 
-val uncalibExp = new Estimator( ( SupportVectorMachine("svm", None), Uncalibrated) )
+object Chart1 extends CompareSystems{
+    import Estimator._
+    // get SVM recognizer
+    val baseModel = SupportVectorMachine("svm", None)//RF("rf", None) 
+    val recognizer = getRecognizer(baseModel, trainDF)
+    // Transform predictions (logit transform)
+    val loEval = xEval.map(recognizer).map(logit).toVector
+    val tarPreds = loEval zip yEval filter{case (lo,y) => y == 1} map {_._1} 
+    val nonPreds = loEval zip yEval filter{case (lo,y) => y == 0} map {_._1} 
+    // Evaluate CCD on Eval (no dev used) -- Bonus: kernel density
+    //plotCCD(nonPreds,tarPreds)
+    
+    // Fit pav on Eval and plot LLR (line chart)
+    val pav = new PAV(loEval, yEval, plodds)
+    val (scores, llr) = pav.scoreVSlogodds
+    val pa = AppParameters(p_w1=0.5,Cmiss=100,Cfa=5)
+    val minTheta = -1*paramToTheta(pa)
+    //plotLLR(scores, llr, minTheta)
+    // Calculate expected Risk (argmin to find pMissPfa)
+    // TODO : argmin as pimped class https://stackoverflow.com/questions/3050557/how-can-i-extend-scala-collections-with-an-argmax-method
+    def minScoreIndex(llr: Row, minTheta: Double): Int = {
+        llr.map{x => math.abs(x-minTheta) }.zipWithIndex.minBy(_._1)._2
+    }
 
-*/
+    def minPmissPfa(pav: PAV, iScore: Int): Tuple2[Double, Double] = {
+        val pMiss = pav.pMisspFa(0).drop(0)
+        val pFa = pav.pMisspFa(1).drop(0)
+        (pMiss(iScore), pFa(iScore))
+    }
+    val iScore = minScoreIndex(llr, minTheta)
+    val (pMiss, pFa) = minPmissPfa(pav, iScore)
+    val expectedRisk = pa.p_w1*pMiss*pa.Cmiss + (1-pa.p_w1)*pFa*pa.Cfa
+    // Simulate to verify expected Risk
+    // Bonus: Plot expeted risk with several thresholds
+    val thresholder: (Double => User) = lo => if (lo > minTheta) {Fraudster} else {Regular}
+    def classifier:(Array[Double] => User) = recognizer andThen logit andThen thresholder
+
+    def getRisk: Distribution[Double] = for {
+        transaction <- transact(pa.p_w1)
+        prediction = classifier(transaction.features.toArray)
+        risk = cost(pa, transaction.UserType, prediction)
+    } yield risk
+
+    def simulate: Distribution[Double] = getRisk.repeat(1000).map(_.sum / 1000.0)
+
+    val trueRisk = simulate.sample(200)
+}
 
 object Bug14 extends CompareSystems{
 
@@ -319,8 +384,6 @@ object Bug14 extends CompareSystems{
     }
 
     object Reconciliation{
-        def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
-
         def getPriorRisk(p: AppParameters): Double = p.p_w1*p.Cmiss + (1-p.p_w1)*p.Cfa
 
         /** Find index of closest number from the target in a list

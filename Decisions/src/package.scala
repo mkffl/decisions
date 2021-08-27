@@ -29,43 +29,63 @@ package object Shared{
         def Row[T](xs: T*) = Vector(xs: _*)
         def Matrix(xs: Row*) = Vector(xs: _*)
 
-        implicit def intToDouble(mat: Vector[Vector[Int]]): Matrix = 
+        implicit def intToDoubleMat(mat: Vector[Vector[Int]]): Matrix = 
             for (row <- mat) 
                 yield for (value <- row) 
                     yield value.toDouble
         
+        implicit def intToDoubleRow(vect: Vector[Int]): Row = 
+            for (value <- vect) yield value.toDouble
+        
         implicit def floatToDoubleRow(row: Vector[Float]): Row = 
             for (value <- row)
                     yield value.toDouble
+        
+        class RowLinAlg(a: Row){
+            /* Inner product
+            */
+            def dot(b: Row): Double =  a zip b map Function.tupled(_*_) reduceLeft (_+_)
 
-        /* Matrix product operation
-        If matrix A is (m,n) and B is (n,p) then output is (m,p)
-        Input matrices must be (m,n) and (n,p).
-        */
-        def matMul(A: Matrix, B: Matrix) = {
-            for (row <- A) // (m,n)
-            yield for(col <- B.transpose) // rotate to (p,n) to loop thru the cols
-                yield row zip col map Function.tupled(_*_) reduceLeft (_+_)
+            /* Common element-wise operations
+            */
+            def +(b: Row): Row = a zip b map Function.tupled(_+_)
+            def -(b: Row): Row = a zip b map Function.tupled(_-_)
+            def *(b: Row): Row = a zip b map Function.tupled(_*_)
+        }
+        
+        object RowLinAlg {
+            implicit def VectorToRow(a: Row): RowLinAlg =
+                new RowLinAlg(a)
         }
 
-        // Dot product sum?
-        def dotProduct(A: Matrix, B: Matrix) = {
-            for ( (rowA, rowB) <- A zip B)
-            yield rowA zip rowB map Function.tupled(_*_) reduceLeft (_+_)
-        }
+        class MatLinAlg(A: Matrix){
+            import RowLinAlg._
 
-        def dot(A: Matrix, B: Matrix): Matrix = {
-            for {
-                row <- A
-            } yield for {
-                col <- B.transpose
-                paired = row zip col
-                multipled = paired map Function.tupled(_*_)
-                summed = multipled reduceLeft (_+_)
-            } yield summed
-        }
+            /* Dot multiplication
+            Called "at" like in python 3.+ 
+            (Symbol @ can't be used in scala)
+            */
+            def at(B: Matrix): Matrix = {
+                for (row <- A)
+                yield for {
+                    col <- B.transpose
+                } yield row dot col
+            }
+            def dot(B: Matrix): Matrix = at(B)
 
-        def addVectors(A: Row, B: Row) = A zip B map Function.tupled(_+_)
+            /* Element-wise operations
+            */
+            def *(B: Matrix): Matrix = {
+                for ((rowA, rowB) <- A zip B)
+                yield rowA zip rowB map Function.tupled(_*_)
+            }
+        }
+        
+        object MatLinAlg {
+            implicit def vecVecToMat(a: Matrix): MatLinAlg =
+                new MatLinAlg(a)
+        }        
+
     }
     trait MathHelp{
         def logit(x: Double): Double = {
@@ -83,5 +103,7 @@ package object Shared{
                 case Regular if actual == Fraudster => p.Cmiss
                 case _ => 0.0
         }
+
+        def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
     }
 }
