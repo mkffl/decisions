@@ -23,6 +23,7 @@ package object Shared{
     }
 
     trait LinAlg{
+
         type Row = Vector[Double]
         type Matrix = Vector[Vector[Double]]
 
@@ -84,16 +85,45 @@ package object Shared{
         object MatLinAlg {
             implicit def vecVecToMat(a: Matrix): MatLinAlg =
                 new MatLinAlg(a)
-        }        
-
+        }
     }
     trait MathHelp{
+
         def logit(x: Double): Double = {
             log(x/(1-x))
         }
 
         def expit(x: Double)= logistic(x)
-    }
+        }
+
+        class CollectionsStats(c: Vector[Double]){
+            def argmax: Int = c.zipWithIndex.maxBy(x => x._1)._2
+            def argmin: Int = c.zipWithIndex.minBy(x => x._1)._2
+            def mean: Double = c.sum / c.size.toDouble
+
+            /* Percentile
+                Returns v_p, the value in c such that p% values are
+                inferior to v_p.
+
+                Note: a more common approach is to interpolate the value of
+                the two nearest neighbours in case the normalized ranking does not match 
+                the location of p exactly. If c is large, assumed here, then it won't 
+                make a big difference.
+            */
+            def percentile(p: Int) = {
+                require(0 <= p && p <= 100)
+                val sorted = c.sorted 
+                val ii = math.ceil((c.length - 1) * (p / 100.0)).toInt
+                sorted(ii)
+            }
+
+            def median = percentile(50)
+        }
+
+        object CollectionsStats{
+            implicit def toCollectionsStats(c: Vector[Double]): CollectionsStats =
+                new CollectionsStats(c)
+        }    
 
     trait Validation {
         case class AppParameters(p_w1: Double, Cmiss: Double, Cfa: Double)

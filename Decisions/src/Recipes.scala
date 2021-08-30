@@ -1,5 +1,7 @@
 package decisions
 
+import scala.language.postfixOps
+
 import probability_monad._
 import scala.util
 import java.util.Properties
@@ -33,7 +35,47 @@ trait CompareSystems extends decisions.Shared.LinAlg
                         with decisions.Shared.FileIO
                         with decisions.Systems
                         with decisions.Shared.Validation{
+    import decisions.Shared.CollectionsStats._
+
     implicit def floatToDoubleRow(values: Row): Seq[Double] = values.toSeq
+
+    val confidenceBand: Tuple2[Double,Double] => Shape = bounds => new Shape(
+        `type`=Some("rect"),
+        xref=Some("x"),
+        yref=Some("y"),
+        x0=Some(s"${bounds._1}"),
+        y0=Some(0.0),
+        x1=Some(s"${bounds._2}"),
+        y1=Some(0.3),
+        fillcolor=Some(Color.RGBA(156, 165, 196, 1.0)),
+        opacity=Some(0.3),
+        line=Some(Line(color = Color.RGBA(156, 165, 196, 1.0), width = 1.0)),
+    )
+
+    val expectedLine: Double => Shape = expected => new Shape(
+      `type`=Some("line"),
+      xref=Some("x"),
+      yref=Some("y"),
+      x0=Some(s"$expected"),
+      y0=Some(0.0),
+      x1=Some(s"$expected"),
+      y1=Some(0.3),
+      fillcolor=None,
+      opacity=None,
+      line=Some(Line(color = Color.RGBA(55, 128, 191, 1.0), width = 3.0))
+    )
+
+    //TODO: rename
+    def plotSimulation(observed: Row, expected: Double) = {
+        val rect = confidenceBand((observed.percentile(5), observed.percentile(95)))
+        val lin = expectedLine(expected)
+        val trace = Histogram(observed, histnorm= HistNorm.Probability, name="TBC")
+        val layout = Layout().
+                     withTitle("Simulation").
+                     withYaxis(Axis(title = "y")).
+                     withShapes(Seq(rect,lin))
+        Plotly.plot(s"$plotlyRootP/simulation.html", Seq(trace), layout)
+    }
 
     def plotCCD(w1Data: Seq[Double], w2Data: Seq[Double], title: String="Class Conditional Densities") = {
         val trace1 = Histogram(w1Data, histnorm= HistNorm.Probability, name="Class ω1")
@@ -116,6 +158,27 @@ trait CompareSystems extends decisions.Shared.LinAlg
         val data = Seq(llrTrace, minThetaTrace)
 
         Plotly.plot(s"$plotlyRootP/llr.html", data, layout)
+    }
+
+    def plotRisk(scores: Row, allRisks: Row): Unit = {
+        val risksTrace = Scatter(
+            scores,
+            allRisks,
+            name = "E(r)",
+            mode = ScatterMode(ScatterMode.Lines)
+        )
+        val layout = Layout(
+            title="Scores vs Log Likelihood Ratio",
+            xaxis = Axis(
+                range = (-5, +5),
+                title = "Score"),
+            yaxis = Axis(
+                range = (0, 10),                
+                title = "E(r)")
+        )
+        val data = Seq(risksTrace)
+
+        Plotly.plot(s"$plotlyRootP/risks.html", data, layout)
     }
 
     // priors should be probabilities for easier interpretation
@@ -299,39 +362,53 @@ trait CompareSystems extends decisions.Shared.LinAlg
 
 object Chart1 extends CompareSystems{
     import Estimator._
-    // get SVM recognizer
+    import decisions.Shared.CollectionsStats._
+    
+    // Get train data, assuming balanced labels
+    val pa = AppParameters(p_w1=0.5,Cmiss=100,Cfa=5)
+    val trainData: Seq[Transaction] = transact(pa.p_w1).sample(1_000)
+    val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
+    // Fit the SVM recognizer
     val baseModel = SupportVectorMachine("svm", None)//RF("rf", None) 
     val recognizer = getRecognizer(baseModel, trainDF)
-    // Transform predictions (logit transform)
+
+    // Transform predictions (logit transform) to have scores on ]-inf, +inf[
+    // Evaluate CCD on Eval (no dev used) -- Bonus: kernel density
     val loEval = xEval.map(recognizer).map(logit).toVector
     val tarPreds = loEval zip yEval filter{case (lo,y) => y == 1} map {_._1} 
     val nonPreds = loEval zip yEval filter{case (lo,y) => y == 0} map {_._1} 
-    // Evaluate CCD on Eval (no dev used) -- Bonus: kernel density
-    //plotCCD(nonPreds,tarPreds)
+    def chart1a = plotCCD(nonPreds,tarPreds)
     
     // Fit pav on Eval and plot LLR (line chart)
     val pav = new PAV(loEval, yEval, plodds)
     val (scores, llr) = pav.scoreVSlogodds
-    val pa = AppParameters(p_w1=0.5,Cmiss=100,Cfa=5)
     val minTheta = -1*paramToTheta(pa)
-    //plotLLR(scores, llr, minTheta)
-    // Calculate expected Risk (argmin to find pMissPfa)
-    // TODO : argmin as pimped class https://stackoverflow.com/questions/3050557/how-can-i-extend-scala-collections-with-an-argmax-method
-    def minScoreIndex(llr: Row, minTheta: Double): Int = {
-        llr.map{x => math.abs(x-minTheta) }.zipWithIndex.minBy(_._1)._2
-    }
+    def chart1b = plotLLR(scores, llr, minTheta)
 
+    // Calculate expected Risk (argmin to find pMissPfa)
     def minPmissPfa(pav: PAV, iScore: Int): Tuple2[Double, Double] = {
         val pMiss = pav.pMisspFa(0).drop(0)
         val pFa = pav.pMisspFa(1).drop(0)
         (pMiss(iScore), pFa(iScore))
     }
-    val iScore = minScoreIndex(llr, minTheta)
+    //val iScore = minScoreIndex(llr, minTheta)
+    val iScore = llr.map{x => math.abs(x-minTheta) }.argmin
     val (pMiss, pFa) = minPmissPfa(pav, iScore)
-    val expectedRisk = pa.p_w1*pMiss*pa.Cmiss + (1-pa.p_w1)*pFa*pa.Cfa
+    val scoreThreshold = scores(iScore)
+    /*  Expected Risk
+        E(r) = Cmiss.p(ω1).∫p(x<c|ω1)dx + Cfa.p(ω0).∫p(x>c|ω0)dx
+             = Cmiss.p(ω1).Pmiss + Cfa.p(ω0).Pfa
+    */
+    def expectedRisk(pa: AppParameters)(operatingPoint: Row): Double = pa.p_w1*operatingPoint(0)*pa.Cmiss + (1-pa.p_w1)*operatingPoint(1)*pa.Cfa
+    val fraudAppRisk: Row => Double = expectedRisk(pa)(_)
+    val allRisks = pav.pMisspFa.transpose.map(p => fraudAppRisk(p))
+    val minRisk = fraudAppRisk(Row(pMiss, pFa))
+    def chart1c = plotRisk(scores, allRisks)
+
     // Simulate to verify expected Risk
-    // Bonus: Plot expeted risk with several thresholds
-    val thresholder: (Double => User) = lo => if (lo > minTheta) {Fraudster} else {Regular}
+    // Bonus: Plot expected risk with several thresholds
+    // TODO: apply the classifier approach to the estimators
+    val thresholder: (Double => User) = score => if (score > scoreThreshold) {Fraudster} else {Regular}
     def classifier:(Array[Double] => User) = recognizer andThen logit andThen thresholder
 
     def getRisk: Distribution[Double] = for {
@@ -341,8 +418,98 @@ object Chart1 extends CompareSystems{
     } yield risk
 
     def simulate: Distribution[Double] = getRisk.repeat(1000).map(_.sum / 1000.0)
+    val simRisk: Row = simulate.sample(200).toVector
+    val fithPerc = simRisk.percentile(5)
+    val ninetyfithPerc = simRisk.percentile(95)
 
-    val trueRisk = simulate.sample(200)
+    def getPermutations(A: Row, B: Row): Vector[Tuple2[Double,Double]] = for {
+            a <- A
+            b <- B
+        } yield (a,b)
+
+    def flagTP(pair: Tuple2[Double,Double]): Double = pair match {case (tar,non) => if (tar>non) {1} else {0} }
+
+    // can break; mean method...
+    def naiveAStat(tarPreds: Row, nonPreds: Row): Double = getPermutations(tarPreds, nonPreds).map(flagTP).mean
+
+    /* count [score_w1 > score_w0] */
+    def TarSupN(non:Row, tar:Row): Int = getPermutations(non,tar) filter {score => score._2 > score._1} size
+    
+    def naiveA(non: Row, tar: Row): Double = {
+        val num = TarSupN(non,tar)
+        val den = non.size*tar.size
+        num/den.toDouble
+    }
+
+    def sumRank(s0: Row, s1: Row)=//: Int = 
+        (s0.map{x => (x,Regular)} ++ s1.map{x => (x,Fraudster)}).
+            sortBy(_._1).
+            zipWithIndex.map{case ((lo,label),rank) => (lo,label,rank+1)}.
+            filter{case (lo,label,rank) => label == Fraudster}.
+            map{case (lo,label,rank) => rank}.
+            sum
+
+    
+
+    def wmwStat(s0: Row, s1: Row): Double = {
+        val NTar = s1.size
+        val ranks = rankAvgTies(s0 ++ s1)
+        val RSum = ranks.takeRight(NTar).sum
+        val U = RSum - NTar*(NTar+1)/2
+        U
+    }
+    
+    def smartA(non:Row, tar:Row) = {
+        val den = non.size*tar.size
+        val U = wmwStat(non,tar)
+        val A = U.toDouble/den
+        A
+    }
+
+    def targetRanks(nonAndTars: Tuple2[Row,Row]): Vector[Int] = {//: Int = 
+        (nonAndTars._1.map{x => (x,Regular)} ++ nonAndTars._2.map{x => (x,Fraudster)}).
+            sortBy(_._1).
+            zipWithIndex.
+            map{case ((lo,label),rank) => (lo,label,rank+1)}.
+            filter{case (lo,label,rank) => label == Fraudster}.
+            map{case (lo,label,rank) => rank}
+    }
+
+    def getU(R: Vector[Int]): Double = R.sum - R.size*(1+R.size)/2
+
+    def normalize(N: Int, T: Int)(U: Double) = U/(T*N)
+    
+    val getA: Double => Double = normalize(nonPreds.size, tarPreds.size)(_)
+
+    /* count [s_w1>s_w0] */
+    val wmwStatistic: Tuple2[Row,Row] => Double = targetRanks _ andThen getU
+
+    /* Estimate P(s_w1>s_w0) */
+    val wmwEffectSize: Tuple2[Row,Row] => Double = wmwStatistic andThen getA
+
+    def rankAvgTies(input: Vector[Double]) = {
+        // Helper to identify fields in the tuple cobweb
+        case class Rank(value: Double,index: Integer,rank: Integer)
+
+        val enhanced = input.zipWithIndex.
+                        sortBy(_._1).zipWithIndex.
+                        map{case ((lo,index),rank) => Rank(lo,index,rank+1)}
+        val avgTies = enhanced.groupBy(_.value).
+                    map{ case (value, v) => (value, v.map(_.rank.toDouble).sum / v.map(_.rank).size.toDouble)}
+        val joined = for {
+            e <- enhanced
+            a <- avgTies
+            if (e.value == a._1)
+        } yield (e.index,a._2)
+
+        joined.sortBy(_._1).map(_._2.toInt)
+    }    
+
+    def sample(data: Row, perc: Double) = {
+          require(0 < perc && perc < 1)
+          val mask = Distribution.bernoulli(perc).sample(data.size)
+          data zip(mask) filter{case (v,m) => m == 1} map(_._1)
+      }
 }
 
 object Bug14 extends CompareSystems{

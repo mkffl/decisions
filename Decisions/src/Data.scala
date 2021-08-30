@@ -62,6 +62,10 @@ object TransactionsData extends decisions.Shared.LinAlg{
             features = informative ++ repeats // Vector of size 10
         } yield Transaction(ut,features)
 
-
+    def sample(data: Row, perc: Double) = {
+        require(0 < perc && perc < 1)
+        val mask = Distribution.bernoulli(perc).sample(data.size)
+        data zip(mask) filter{case (v,m) => m == 1} map(_._1)
+    }
 
 }
