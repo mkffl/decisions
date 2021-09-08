@@ -35,7 +35,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
                         with decisions.Shared.FileIO
                         with decisions.Systems
                         with decisions.Shared.Validation{
-    import decisions.Shared.CollectionsStats._
+    import CollectionsStats._
 
     implicit def floatToDoubleRow(values: Row): Seq[Double] = values.toSeq
 
@@ -248,6 +248,87 @@ trait CompareSystems extends decisions.Shared.LinAlg
         //Plotly.plot("reliability.html", data, layout)
     }
 
+    def plotCCD_LLR_ROC(data: Chart1.ScoreCounts): Unit = {
+        val th = data.thresholds
+        val correctType: Vector[Double] = data.asCCD.lift(0).getOrElse(th)
+        val ccdW0Trace = Bar(th, data.asCCD.lift(0).get).
+            withName("Class Conditional Distribition, P(x|ω0)"). 
+            withXaxis(AxisReference.X2).
+            withYaxis(AxisReference.Y2).
+            withMarker(
+                Marker().
+                withColor(Color.RGB(124, 135, 146)).
+                withOpacity(0.5)
+            ).
+            withWidth(0.5)
+
+
+        val ccdW1Trace = Bar(th, data.asCCD.lift(1).get).
+            withName("Class Conditional Distribition, P(x|ω1)"). 
+            withXaxis(AxisReference.X2).
+            withYaxis(AxisReference.Y2).
+            withMarker(
+                Marker().
+                withColor(Color.RGB(6, 68, 91)).
+                withOpacity(0.8)
+            ).
+            withWidth(0.5)
+
+        val llrTrace = Scatter(
+            th,
+            data.asLLR,
+            name = "Log-likelihood Ratio P(x|ω1)/P(x|ω0)",
+            xaxis = AxisReference.X3,
+            yaxis = AxisReference.Y3
+        )
+
+        val rocTrace = Scatter(
+            data.asROC.lift(0).get,
+            data.asROC.lift(1).get,
+            name = "Receiving Operator Characteristics P(x>c|ω0) vs P(x>c|ω1)",
+            xaxis = AxisReference.X4,
+            yaxis = AxisReference.Y4            
+        )
+
+        val allPlots = Seq(ccdW0Trace, ccdW1Trace, llrTrace, rocTrace)
+
+        val layout =  Layout(
+                title = "Mulitple Custom Sized Subplots",
+                width = 700,
+                height = 900,
+                xaxis = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.Y1),
+                    domain = (0, 1)),
+                yaxis = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.X1),
+                    domain = (0.65, 1)),
+                xaxis2 = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.Y2),
+                    domain = (0, 1)),
+                yaxis2 = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.X2),
+                    domain = (0.65, 1)),
+                xaxis3 = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.Y3),
+                    domain = (0, 1)),
+                yaxis3 = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.X3),
+                    domain = (0.33, 0.65)),
+                xaxis4 = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.Y4),
+                    domain = (0, 1)),
+                yaxis4 = Axis(
+                    anchor = AxisAnchor.Reference(AxisReference.X4),
+                    domain = (0, 0.32))
+    )
+
+        Plotly.plot(
+            s"$plotlyRootP/discimination.html",
+            allPlots,
+            layout
+        )
+
+    }
     
     val formula = Formula.lhs("label")
 
@@ -300,9 +381,9 @@ trait CompareSystems extends decisions.Shared.LinAlg
     object Estimator{
         // Instantiate the data shared across estimators
         val p_w1 = 0.3
-        val trainData: Seq[Transaction] = transact(p_w1).sample(1_000)
-        val devData: Seq[Transaction] = transact(p_w1).sample(100_000)
-        val evalData: Seq[Transaction] = transact(p_w1).sample(20_000)
+        val trainData: Seq[Transaction] = transact(p_w1).sample(1_000) // Base value is 1_000
+        val devData: Seq[Transaction] = transact(p_w1).sample(100_000) // Base value is 100_000
+        val evalData: Seq[Transaction] = transact(p_w1).sample(2000) // Base value is 20_000
         val trainSchema = DataTypes.struct(
                 new StructField("label", DataTypes.IntegerType),
                 new StructField("f1", DataTypes.DoubleType),
@@ -362,7 +443,7 @@ trait CompareSystems extends decisions.Shared.LinAlg
 
 object Chart1 extends CompareSystems{
     import Estimator._
-    import decisions.Shared.CollectionsStats._
+    import CollectionsStats._
     
     // Get train data, assuming balanced labels
     val pa = AppParameters(p_w1=0.5,Cmiss=100,Cfa=5)
@@ -381,8 +462,8 @@ object Chart1 extends CompareSystems{
     
     // Fit pav on Eval and plot LLR (line chart)
     val pav = new PAV(loEval, yEval, plodds)
-    val (scores, llr) = pav.scoreVSlogodds
-    val minTheta = -1*paramToTheta(pa)
+    val (scores, llr) = pav.scoreVSlogodds // scores <-> pavLoEval
+    val minTheta = -1 * paramToTheta(pa)
     def chart1b = plotLLR(scores, llr, minTheta)
 
     // Calculate expected Risk (argmin to find pMissPfa)
@@ -422,72 +503,28 @@ object Chart1 extends CompareSystems{
     val fithPerc = simRisk.percentile(5)
     val ninetyfithPerc = simRisk.percentile(95)
 
+    // Common Language Effect size
+    // Naive and wmw-based computations
     def getPermutations(A: Row, B: Row): Vector[Tuple2[Double,Double]] = for {
             a <- A
             b <- B
         } yield (a,b)
 
-    def flagTP(pair: Tuple2[Double,Double]): Double = pair match {case (tar,non) => if (tar>non) {1} else {0} }
-
-    // can break; mean method...
-    def naiveAStat(tarPreds: Row, nonPreds: Row): Double = getPermutations(tarPreds, nonPreds).map(flagTP).mean
-
     /* count [score_w1 > score_w0] */
     def TarSupN(non:Row, tar:Row): Int = getPermutations(non,tar) filter {score => score._2 > score._1} size
     
+    /* Estimate P(score_w1 > score_w0) */
     def naiveA(non: Row, tar: Row): Double = {
         val num = TarSupN(non,tar)
         val den = non.size*tar.size
         num/den.toDouble
     }
 
-    def sumRank(s0: Row, s1: Row)=//: Int = 
-        (s0.map{x => (x,Regular)} ++ s1.map{x => (x,Fraudster)}).
-            sortBy(_._1).
-            zipWithIndex.map{case ((lo,label),rank) => (lo,label,rank+1)}.
-            filter{case (lo,label,rank) => label == Fraudster}.
-            map{case (lo,label,rank) => rank}.
-            sum
-
-    
-
-    def wmwStat(s0: Row, s1: Row): Double = {
-        val NTar = s1.size
-        val ranks = rankAvgTies(s0 ++ s1)
-        val RSum = ranks.takeRight(NTar).sum
-        val U = RSum - NTar*(NTar+1)/2
-        U
-    }
-    
-    def smartA(non:Row, tar:Row) = {
-        val den = non.size*tar.size
-        val U = wmwStat(non,tar)
-        val A = U.toDouble/den
-        A
-    }
-
-    def targetRanks(nonAndTars: Tuple2[Row,Row]): Vector[Int] = {//: Int = 
-        (nonAndTars._1.map{x => (x,Regular)} ++ nonAndTars._2.map{x => (x,Fraudster)}).
-            sortBy(_._1).
-            zipWithIndex.
-            map{case ((lo,label),rank) => (lo,label,rank+1)}.
-            filter{case (lo,label,rank) => label == Fraudster}.
-            map{case (lo,label,rank) => rank}
-    }
-
-    def getU(R: Vector[Int]): Double = R.sum - R.size*(1+R.size)/2
-
-    def normalize(N: Int, T: Int)(U: Double) = U/(T*N)
-    
-    val getA: Double => Double = normalize(nonPreds.size, tarPreds.size)(_)
-
-    /* count [s_w1>s_w0] */
-    val wmwStatistic: Tuple2[Row,Row] => Double = targetRanks _ andThen getU
-
-    /* Estimate P(s_w1>s_w0) */
-    val wmwEffectSize: Tuple2[Row,Row] => Double = wmwStatistic andThen getA
-
-    def rankAvgTies(input: Vector[Double]) = {
+    /* Rank values with tied averages
+        Inpupt: Vector(4.5, -3.2, 1.2, 5.6, 1.2, 1.2)
+        Output: Vector(5,   -1,   3,   6,   3,   3  )
+    */    
+    def rankAvgTies(input: Row): Row = {
         // Helper to identify fields in the tuple cobweb
         case class Rank(value: Double,index: Integer,rank: Integer)
 
@@ -505,11 +542,108 @@ object Chart1 extends CompareSystems{
         joined.sortBy(_._1).map(_._2.toInt)
     }    
 
+    /* Wilcoxon Statistic, also named U */
+    def wmwStat(s0: Row, s1: Row): Int = {
+        val NTar = s1.size
+        val ranks = rankAvgTies(s0 ++ s1)
+        val RSum = ranks.takeRight(NTar).sum
+        val U = RSum - NTar*(NTar+1)/2
+        U toInt
+    }
+    
+    /* Estimate P(score_w1 > score_w0) */
+    def smartA(non:Row, tar:Row) = {
+        val den = non.size*tar.size
+        val U = wmwStat(non,tar)
+        val A = U.toDouble/den
+        A
+    }
+
+    /* Unit test
+        val tarSam = sample(tarPreds,0.02); val nonSam = sample(nonPreds,0.02)
+        naiveA(nonSam,tarSam) == smartA(nonSam,tarSam) 
+    */
     def sample(data: Row, perc: Double) = {
           require(0 < perc && perc < 1)
           val mask = Distribution.bernoulli(perc).sample(data.size)
           data zip(mask) filter{case (v,m) => m == 1} map(_._1)
-      }
+    }
+
+    // TODO: Check that U is to test that A = 0.5
+    // If so then it's practically useless?
+    // check if I can use the estimated variance to compare A1 and A2 for 2 models
+
+    val proportion: Row => Row = counts => {
+        val S = counts.sum.toDouble
+        counts.map(v => v/S)
+    }
+    val cumulative: Row => Row = freq => freq.scanLeft(0.0)(_ + _)
+    val oneMinus: Row => Row = cdf => cdf.map(v => 1-v)
+    val decreasing: Row => Row = data => data.reverse
+    val odds: Tuple2[Row,Row] => Row = w0w1 => w0w1._1.zip(w0w1._2).map{case (non,tar) => tar/non}
+    val logarithm: Row => Row = values => values.map(math.log)
+
+    /* Bayes Decision Rules
+       Plot CCD,LLR and ROC for histogram bins with 2000 points
+       - 20 bins for a smooth approximation 
+       - Then 100 bins to have a concavity, a segway into PAV
+       - PAV counts with 20 bins, LLR and ROC with isocosts to show the link with risk-based decisions
+    */
+
+    trait ApproximateDistributions {
+        // Define some common operations to estimate distributions
+        val pdf = proportion
+        val cdf = pdf andThen cumulative
+        val rhsArea = cdf andThen oneMinus
+        val logodds: Tuple2[Row,Row] => Row = odds andThen logarithm
+    }
+    case class ScoreCounts(w1Counts: Vector[Double], w0Counts: Vector[Double], thresholds: Vector[Double]) extends ApproximateDistributions {
+        val N = w1Counts.size
+        require(w0Counts.size == N)
+        require(thresholds.size == N)
+
+        /* Present the information */
+        def asCCD: Vector[Vector[Double]] = {
+            val w0pdf = pdf(w0Counts)
+            val w1pdf = pdf(w1Counts)
+            Vector(w0pdf,w1pdf)
+        }
+        def asLLR: Vector[Double] = logodds((pdf(w0Counts),pdf(w1Counts)))
+        def asROC: Vector[Vector[Double]] = {
+            val fpr = (rhsArea andThen decreasing)(w0Counts)
+            val tpr = (rhsArea andThen decreasing)(w1Counts)
+            Vector(fpr,tpr)
+        }
+        def asDET: Vector[Vector[Double]] = ???
+        def asPmissPfa: Vector[Vector[Double]] = {
+            val pMiss = rhsArea(w1Counts)
+            val pFa = rhsArea(w0Counts) // Same as fpr but in the asc order of scores
+            Vector(pMiss,pFa)
+        }
+
+        /* Given application parameters, return optimal threshold and the corresponding expected risk */
+        def minimizeRisk(pa: AppParameters): Tuple2[Double,Double] = ???
+        def ber(p_w1: Double): Tuple2[Double,Double] = minimizeRisk(AppParameters(p_w1,1,1))
+    }
+
+    val w0Counts = pav.nonTars
+    val w1Counts = pav.targets
+    val thresholds: Row = pav.pavFit.bins.map(_.getX)
+    val pavDist = ScoreCounts(w1Counts,w0Counts,thresholds)
+    //plotCCD_LLR_ROC(pavDist)
+    val numBins = 100
+    val min=loEval.min
+    val max=loEval.max
+    val w0HistCounts = histogram(nonPreds,numBins,min,max).map(_._2).toVector
+    val w1HistCounts = histogram(tarPreds,numBins,min,max).map(_._2).toVector
+    val histThresh = histogram(tarPreds,numBins,min,max).map(_._1.toDouble).toVector
+    val histDist = ScoreCounts(w1HistCounts,w0HistCounts,histThresh)
+    plotCCD_LLR_ROC(histDist)
+
+    // Plot of CCD, LLR and ROC [bins] 
+    // then CCD [bins], LLR and ROC [pav]
+    // 
+
 }
 
 object Bug14 extends CompareSystems{
@@ -625,3 +759,4 @@ object Bug14 extends CompareSystems{
 
     }
 }
+

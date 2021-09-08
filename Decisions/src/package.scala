@@ -94,6 +94,39 @@ package object Shared{
         }
 
         def expit(x: Double)= logistic(x)
+        
+
+        /* Taken from probability_monad */
+        def findBucketWidth(min: Double, max: Double, buckets: Int): (BigDecimal, BigDecimal, BigDecimal, Int) = {
+            // Use BigDecimal to avoid annoying rounding errors.
+            val widths = List(0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0).map(BigDecimal.apply)
+            val span = max - min
+            val p = (math.log(span) / math.log(10)).toInt - 1
+            val scale = BigDecimal(10).pow(p)
+            val scaledWidths = widths.map(_ * scale)
+            val bestWidth = scaledWidths.minBy(w => (span / w - buckets).abs)
+            val outerMin = (min / bestWidth).toInt * bestWidth
+            val outerMax = ((max / bestWidth).toInt + 1) * bestWidth
+            val actualBuckets = ((outerMax - outerMin) / bestWidth).toInt
+            (outerMin, outerMax, bestWidth, actualBuckets)
+        }
+
+        /* Taken from probability_monad */
+        def histogram(data: Vector[Double], buckets: Int, min: Double, max: Double)(implicit ord: Ordering[Double], toDouble: Double <:< Double): IndexedSeq[(scala.math.BigDecimal, Double)] = {
+            //val min = data.head
+            //val max = data.last
+            val n = data.size
+            val rm = BigDecimal.RoundingMode.DOWN
+            
+            val (outerMin, outerMax, unusedWidth, nbuckets) = findBucketWidth(toDouble(min), toDouble(max), buckets)
+            val width = (outerMax - outerMin) / nbuckets
+            def toBucket(a: Double): BigDecimal = ((toDouble(a) - outerMin) / width).setScale(0, rm) * width + outerMin
+            val bucketToProb = data
+            .groupBy(toBucket)
+            .map({ case (b, vs) => b -> vs.size.toDouble })
+            .toMap
+            val bucketed = (outerMin to outerMax by width).map(a => a -> bucketToProb.getOrElse(a, 0.0))
+            bucketed
         }
 
         class CollectionsStats(c: Vector[Double]){
@@ -123,7 +156,8 @@ package object Shared{
         object CollectionsStats{
             implicit def toCollectionsStats(c: Vector[Double]): CollectionsStats =
                 new CollectionsStats(c)
-        }    
+        }
+    } 
 
     trait Validation {
         case class AppParameters(p_w1: Double, Cmiss: Double, Cfa: Double)
