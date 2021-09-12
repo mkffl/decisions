@@ -19,6 +19,8 @@ package object Shared{
 
         val plotlyRootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs"
 
+        val rootP = "/Users/michel/Documents/pjs/model-discrimination-calibration/Stats-Decisions/outputs/transactions_data"
+
         def stringifyVector(data: Vector[Double]): String = data.map(value => s"$value,").mkString.stripSuffix(",")
     }
 
@@ -75,10 +77,16 @@ package object Shared{
             def dot(B: Matrix): Matrix = at(B)
 
             /* Element-wise operations
+                If B has only one row then assume it needs to be broadcast 
+                to every row of A, as with numpy.
             */
-            def *(B: Matrix): Matrix = {
-                for ((rowA, rowB) <- A zip B)
-                yield rowA zip rowB map Function.tupled(_*_)
+            def *(B: Matrix): Matrix = B match {
+                case Vector(uniqueRowB) => 
+                    for (rowA <- A) yield rowA zip uniqueRowB map Function.tupled(_*_)
+                case Vector(first, rest @ _ *) => 
+                    for ((rowA, rowB) <- A zip B)
+                    yield rowA zip rowB map Function.tupled(_*_)
+                case _ => Matrix(Row(-10,-10))
             }
         }
         
@@ -95,6 +103,7 @@ package object Shared{
 
         def expit(x: Double)= logistic(x)
         
+        def exp(x: Double) = math.exp(x)
 
         /* Taken from probability_monad */
         def findBucketWidth(min: Double, max: Double, buckets: Int): (BigDecimal, BigDecimal, BigDecimal, Int) = {
@@ -151,12 +160,39 @@ package object Shared{
             }
 
             def median = percentile(50)
+
+            /** Find index of closest number from the target in a list
+             * {{
+             * val target = 3.2
+             * val nums = List(-2.0, 3.0, 4.0)
+             * getClosestIndex(nums, target) // returns 1
+             * }}
+             */
+            def getClosestIndex(target: Double): Integer = 
+                c.zipWithIndex.minBy(tup => math.abs(tup._1-target))._2            
         }
 
         object CollectionsStats{
             implicit def toCollectionsStats(c: Vector[Double]): CollectionsStats =
                 new CollectionsStats(c)
+            }
+        
+        // Define some of the common operations to estimate distributions
+        val proportion: Row => Row = counts => {
+            val S = counts.sum.toDouble
+            counts.map(v => v/S)
         }
+        val cumulative: Row => Row = freq => freq.scanLeft(0.0)(_ + _)
+        val oneMinus: Row => Row = cdf => cdf.map(v => 1-v)
+        val decreasing: Row => Row = data => data.reverse
+        val odds: Tuple2[Row,Row] => Row = w0w1 => w0w1._1.zip(w0w1._2).map{case (non,tar) => tar/non}
+        val logarithm: Row => Row = values => values.map(math.log)        
+
+        val pdf: Row => Row = proportion
+        val cdf: Row => Row = pdf andThen cumulative
+        val rhsArea: Row => Row = cdf andThen oneMinus
+        val logodds: Tuple2[Row,Row] => Row = odds andThen logarithm
+
     } 
 
     trait Validation {
@@ -169,5 +205,11 @@ package object Shared{
         }
 
         def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
+
+        /*  Expected Risk
+            E(r) = Cmiss.p(ω1).∫p(x<c|ω1)dx + Cfa.p(ω0).∫p(x>c|ω0)dx
+                = Cmiss.p(ω1).Pmiss + Cfa.p(ω0).Pfa
+        */        
+        def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = pa.p_w1*operatingPoint._2*pa.Cmiss + (1-pa.p_w1)*operatingPoint._1*pa.Cfa
     }
 }

@@ -202,12 +202,3 @@ object EvalUtils extends decisions.Shared.LinAlg{
         Vector(pMiss.toVector, pFa.toVector)
     }
 }
-
-/*
-object Example{
-  def main(args: Array[String]): Unit = {
-    println("a")
-  }
-}
-
-*/
