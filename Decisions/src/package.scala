@@ -206,10 +206,17 @@ package object Shared{
 
         def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
 
-        /*  Expected Risk
+        /*  Expected Risk using evaluation data at a particular operating point
+
             E(r) = Cmiss.p(ω1).∫p(x<c|ω1)dx + Cfa.p(ω0).∫p(x>c|ω0)dx
                 = Cmiss.p(ω1).Pmiss + Cfa.p(ω0).Pfa
+            c: cutoff point to evaluate
+
+            @param pa the application's prior probability and cost of miss and false alarm
+            @param operatingPoint the probability of miss and false alarm
+            @return the expected risk
         */        
-        def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = pa.p_w1*operatingPoint._2*pa.Cmiss + (1-pa.p_w1)*operatingPoint._1*pa.Cfa
+        def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = 
+                pa.p_w1*operatingPoint._1*pa.Cmiss + (1-pa.p_w1)*operatingPoint._2*pa.Cfa
     }
 }

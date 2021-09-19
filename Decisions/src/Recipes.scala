@@ -276,11 +276,11 @@ object Recipes extends decisions.Shared.LinAlg
         import Evals._
         def lineShape(x0: Double,
                     y0: Double,
-                    y1: Double,
                     x1: Double,
+                    y1: Double,
                     xref: String = "x",
                     yref: String = "y",
-                    c: Seq[Int] = Seq(55,128,191,1)
+                    c: Seq[Int] = Seq(129,2,2,1)
         ): Shape = new Shape(
                 `type`=Some("line"),
                 xref=Some(xref),
@@ -291,13 +291,13 @@ object Recipes extends decisions.Shared.LinAlg
                 y1=Some(y1),
                 fillcolor=None,
                 opacity=None,
-                line=Some(Line(color = Color.RGBA(c(0), c(1), c(2), c(3)), width = 1.0))
+                line=Some(Line(color=Color.RGBA(c(0), c(1), c(2), c(3)), width = 1.0,dash=Dash.Dot))
         )
 
         def rectangleShape(x0: Double,
                     y0: Double,
-                    y1: Double,
                     x1: Double,
+                    y1: Double,
                     xref: String = "x",
                     yref: String = "y",
                     c: Seq[Int] = Seq(156, 165, 196, 1)
@@ -314,7 +314,7 @@ object Recipes extends decisions.Shared.LinAlg
             line=Some(Line(color = Color.RGBA(c(0), c(1), c(2), c(3)), width = 1.0)),
         )        
 
-        def plotCCD(w0pdf: Row,w1pdf: Row,thresholds: Row) = {
+        def plotCCD(w0pdf: Row,w1pdf: Row,thresholds: Row, fName: String) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
                 withName("P(s|ω0)"). 
                 withMarker(
@@ -322,7 +322,7 @@ object Recipes extends decisions.Shared.LinAlg
                     withColor(Color.RGB(124, 135, 146)).
                     withOpacity(0.5)
                 ).
-                withWidth(0.5)
+                withWidth(0.15)
     
     
             val ccdW1Trace = Bar(thresholds, w1pdf).
@@ -332,16 +332,18 @@ object Recipes extends decisions.Shared.LinAlg
                     withColor(Color.RGB(6, 68, 91)).
                     withOpacity(0.8)
                 ).
-                withWidth(0.5)
+                withWidth(0.15)
                 
             val traces = Seq(ccdW0Trace,ccdW1Trace)
             
             val layout = Layout().
-                    withTitle("Class conditional distributions P(s|w_i)").
-                    withXaxis(Axis(title="s",range=(-3,+3)))
+                    withTitle("Class Conditional Distributions (CCD)").
+                    withWidth(900).
+                    withHeight(700).                    
+                    withXaxis(Axis(title="s",range=(-5,+5))).
+                    withYaxis(Axis(title="p(s|w_i)"))
 
-
-            Plotly.plot(s"$plotlyRootP/ccd.html", traces, layout)
+            Plotly.plot(s"$plotlyRootP/$fName-ccd.html", traces, layout)
         }
 
         def plotCCD_LLR_E_r(w0pdf: Row,
@@ -349,9 +351,12 @@ object Recipes extends decisions.Shared.LinAlg
                     llr: Row, 
                     e_r: Row,
                     thresholds: Row,
-                    cutLine: Segment,
+                    cutLine1: Segment,
+                    cutLine2: Segment,
+                    cutLine3: Segment,
                     thetaLine: Segment,
-                    minRLine: Segment
+                    minRLine: Segment,
+                    fName: String
         ) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
                 withName("P(s|ω0)"). 
@@ -377,7 +382,7 @@ object Recipes extends decisions.Shared.LinAlg
                 withYaxis(AxisReference.Y1)               
 
             val llrTrace = Scatter(thresholds, llr).
-                withName("Log Likelihood Ratio log P(s|ω1)/P(s|ω0)").
+                withName("Log Likelihood Ratio").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X2).
                 withYaxis(AxisReference.Y2) 
@@ -390,47 +395,49 @@ object Recipes extends decisions.Shared.LinAlg
 
             val traces = Seq(ccdW0Trace,ccdW1Trace,llrTrace,e_rTrace)
 
-            val ccdCutOff = cutLine match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x1","y1")}
+            val cutOff1 = cutLine1 match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x1","y1")}
+            val cutOff2 = cutLine2 match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x2","y2")}
+            val cutOff3 = cutLine3 match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x3","y3")}
             val llrminTheta = thetaLine match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x2","y2")}
             val minRisk = minRLine match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x3","y3")}            
 
-            val shapes = Seq(ccdCutOff,llrminTheta,minRisk)
+            val shapes = Seq(cutOff1,cutOff2,cutOff3,llrminTheta,minRisk)
 
             val layout =  Layout().
                     withTitle("Bayes Decisions").
-                    withWidth(700).
+                    withWidth(1000).
                     withHeight(900).
-                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-3,+3))).
-                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.65, 1))).
-                    withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-3,+3))).
-                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0.33, 0.65))).
-                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1))).
-                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(-3,+3))).
+                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-5,+5),title="score (s)")).
+                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.65, 1),title="P(s|ωi)")).
+                    withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-5,+5),title="score (s)")).
+                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0.33, 0.65),title="llr(ω0)")).
+                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1),title="score (s)")).
+                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(-5,+5),title="E(risk)")).
                     withShapes(shapes)
 
-            Plotly.plot(s"$plotlyRootP/bayesdecisions1.html", traces, layout)
+            Plotly.plot(s"$plotlyRootP/$fName-bayesdecisions1.html", traces, layout)
         }
 
-        def plotUnivarHist(observed: Row, title: String, vlines: Option[Seq[Segment]], confidence: Option[Segment]) = {
-            
+        def plotUnivarHist(observed: Row, title: String, xtitle: String, vlines: Option[Seq[Segment]], confidence: Option[Segment], fName: String) = {
+
             val conf: Option[Seq[Shape]] = confidence.map{case Segment(Point(x0,y0),Point(x1,y1)) => Seq(rectangleShape(x0,y0,x1,y1))}
 
-            val lin: Option[Seq[Shape]] = vlines.map(xs => xs.map{case Segment(Point(x0,y0),Point(x1,y1)) =>  lineShape(x0,y0,x1,y1)})
+            val lin: Option[Seq[Shape]] = vlines.map(xs => xs.map{case Segment(Point(x0,y0),Point(x1,y1)) => lineShape(x0,y0,x1,y1)})
 
             val shapes: Option[Seq[Shape]] = for {
                 c <- conf
                 l <- lin
             } yield c ++ l
  
-            val trace = Histogram(observed, name=title)
+            val trace = Histogram(observed, name=title, histnorm = HistNorm.ProbabilityDensity)
 
             val layout = Layout().
-                        withTitle(title).
-                        withXaxis(Axis(title="x")).
-                        withYaxis(Axis(title="pdf")).
-                        withShapes(shapes)
+                    withTitle(title).
+                    withXaxis(Axis(title=xtitle)).
+                    withYaxis(Axis(title="Frequency")).
+                    withShapes(shapes)
 
-            Plotly.plot(s"$plotlyRootP/simulation.html", Seq(trace), layout)
+            Plotly.plot(s"$plotlyRootP/$fName-simulation.html", Seq(trace), layout)
         }
 
         def plotCCD_LLR_ROC(w0pdf: Row,
@@ -441,7 +448,8 @@ object Recipes extends decisions.Shared.LinAlg
                     thresholds: Row,
                     cutLine: Segment,
                     thetaLine: Segment,
-                    rocLine: Segment
+                    rocLine: Segment, 
+                    fName: String
         ) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
                 withName("P(s|ω0)"). 
@@ -453,7 +461,6 @@ object Recipes extends decisions.Shared.LinAlg
                 withWidth(0.5).
                 withXaxis(AxisReference.X1).
                 withYaxis(AxisReference.Y1)                
-
 
             val ccdW1Trace = Bar(thresholds, w1pdf).
                 withName("P(s|ω1)"). 
@@ -467,7 +474,7 @@ object Recipes extends decisions.Shared.LinAlg
                 withYaxis(AxisReference.Y1)                 
 
             val llrTrace = Scatter(thresholds, llr).
-                withName("Log Likelihood Ratio log P(s|ω1)/P(s|ω0)").
+                withName("Log Likelihood Ratio").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X2).
                 withYaxis(AxisReference.Y2) 
@@ -487,28 +494,29 @@ object Recipes extends decisions.Shared.LinAlg
             val shapes = Seq(ccdCutOff,llrminTheta,isocost)
 
             val layout =  Layout().
-                    withTitle("Bayes Decisions").
-                    withWidth(700).
+                    withTitle("Bayes Decisions with the ROC").
+                    withWidth(1000).
                     withHeight(900).
-                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-3,+3))).
-                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.65, 1))).
-                    withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-3,+3))).
-                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0.33, 0.65))).
-                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1))).
-                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(-3,+3))).
+                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-5,+5),title="score (s)")).
+                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.65, 1),title="P(s|ωi)")).
+                    withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-5,+5),title="score (s)")).
+                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0.33, 0.65),title="log-likelihood ratio")).
+                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1),range=(-0.05,0.6),title="False Positive Rate")).
+                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(0,1.05),title="True Positive Rate")).
                     withShapes(shapes)
 
-            Plotly.plot(s"$plotlyRootP/bayesdecisions2.html", traces, layout)
+            Plotly.plot(s"$plotlyRootP/$fName-bayesdecisions2.html", traces, layout)
         }        
 
-        def LLR_ROC(llr: Row,
+        def plotLLR_ROC(llr: Row,
                     llrPAV: Row,        
                     fpr: Row,
                     tpr: Row,
                     fprPAV: Row,
                     tprPAV: Row,                    
                     thresholds: Row,
-                    thresholdsPAV: Row
+                    thresholdsPAV: Row, 
+                    fName: String
         ) = {
             val llrTrace = Scatter(thresholds, llr).
                 withName("LLR (histogram)").
@@ -547,7 +555,7 @@ object Recipes extends decisions.Shared.LinAlg
                     withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1))).
                     withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(-3,+3)))
 
-            Plotly.plot(s"$plotlyRootP/histVSpav.html", traces, layout)
+            Plotly.plot(s"$plotlyRootP/$fName-histVSpav.html", traces, layout)
         }
     }
 
@@ -590,9 +598,9 @@ object Recipes extends decisions.Shared.LinAlg
             where LLRs intersect -θ.
             Return the corresponding index in the score Vector.
             */
-            private def argminRisk(pa: AppParameters): Int = {
-                val minTheta = -1*paramToTheta(pa)
-                this.asLLR.getClosestIndex(minTheta)
+            def argminRisk(pa: AppParameters): Int = {
+                val minusTheta = -1*paramToTheta(pa)
+                this.asLLR.getClosestIndex(minusTheta)
             }
 
             def expectedRisks(pa: AppParameters): Row = {
@@ -604,10 +612,12 @@ object Recipes extends decisions.Shared.LinAlg
                 val ii = argminRisk(pa)
                 thresholds(ii)
             }
+
             def minRisk(pa: AppParameters): Double = {
                 val ii = argminRisk(pa)
                 val bestPmissPfa = (this.asPmissPfa.apply(0)(ii),this.asPmissPfa.apply(1)(ii))
                 paramToRisk(pa)(bestPmissPfa)
+                //== expectedRisks(pa)(ii)
             }
 
             def ber(p_w1: Double): Double = minRisk(AppParameters(p_w1,1,1))
@@ -615,10 +625,10 @@ object Recipes extends decisions.Shared.LinAlg
             def affine(y1: Double, x1: Double, x2: Double, slope: Double) = y1 + (x2-x1)*slope
 
             def isocost(pa: AppParameters): Segment = {
-                val slope = exp(paramToTheta(pa))
+                val slope = exp(-1*paramToTheta(pa))
                 val ii = argminRisk(pa)
                 val roc = this.asROC
-                val (bfpr, btpr) = (roc(0)(ii), roc(1)(ii))
+                val (bfpr, btpr) = (roc(0).reverse(ii), roc(1).reverse(ii)) // .reverse because roc curves are score inverted
                 val (x1,x2) = (roc(0)(0), roc(0).last)
                 val (y1, y2) = (affine(btpr,bfpr,x1,slope),
                                 affine(btpr,bfpr,x2,slope)
@@ -634,41 +644,46 @@ object Recipes extends decisions.Shared.LinAlg
     object Part1{
         import Plots._, Data._, FitSystems._, Evals._
         object Demo11{
-            def run = plotCCD(hisTo.asCCD(0),hisTo.asCCD(1),hisTo.thresholds)
+            def run = plotCCD(hisTo.asCCD(0),hisTo.asCCD(1),hisTo.thresholds,"demo11")
         }
         object Demo12{
             // In code
         }
         object Demo13{
-            val vlines = Some(Seq(Segment(Point(hisTo.minRisk(pa),0),Point(hisTo.minRisk(pa),0))))
-            val interval = Some(Segment(Point(simRisk.percentile(5),0.0),Point(simRisk.percentile(95),0.5)))
+            val vlines = Some(Seq(Segment(Point(hisTo.minRisk(pa),0),Point(hisTo.minRisk(pa),5))))
+            val interval = Some(Segment(Point(simRisk.percentile(5),0.0),Point(simRisk.percentile(95),5)))
     
-            def run = plotUnivarHist(simRisk,"SVM expected vs actual risk",vlines,interval)
+            def run = plotUnivarHist(simRisk,"SVM Expected vs Actual risk","Risk",vlines,interval,"demo13")
         }
 
         /* CCD,LLR and E(r) to illustrate that Bayes Decisions
             depdent on the application parameters.
         */
         object Demo14{
-            val cutLine = Segment(Point(hisTo.minS(pa),0),Point(hisTo.minS(pa),1))
-            val thetaLine = Segment(Point(-3,paramToTheta(pa)),Point(+3,paramToTheta(pa)))
-            val minRiskLine = Segment(Point(-3,hisTo.minRisk(pa)),Point(+3,hisTo.minRisk(pa)))
+            val cutLine1 = Segment(Point(hisTo.minS(pa),0),Point(hisTo.minS(pa),0.2))
+            val cutLine2 = Segment(Point(hisTo.minS(pa),-4),Point(hisTo.minS(pa),4))
+            val cutLine3 = Segment(Point(hisTo.minS(pa),-4),Point(hisTo.minS(pa),4))
+            val thetaLine = Segment(Point(-5,-1*paramToTheta(pa)),Point(+5,-1*paramToTheta(pa)))
+            val minRiskLine = Segment(Point(-5,hisTo.minRisk(pa)),Point(+5,hisTo.minRisk(pa)))
             
             def run = plotCCD_LLR_E_r(hisTo.asCCD(0),
                         hisTo.asCCD(1),
                         hisTo.asLLR,
                         hisTo.expectedRisks(pa),
                         hisTo.thresholds,
-                        cutLine,
+                        cutLine1,
+                        cutLine2,
+                        cutLine3,
                         thetaLine,
-                        minRiskLine
+                        minRiskLine,
+                        "demo14"
             )
         }
         /* CCD,LLR and ROC to illustrate isocosts
         */
         object Demo15{
-            val cutLine: Segment = Segment(Point(hisTo.minS(pa),0),Point(hisTo.minS(pa),1))
-            val thetaLine = Segment(Point(-3,paramToTheta(pa)),Point(+3,paramToTheta(pa)))
+            val cutLine: Segment = Segment(Point(hisTo.minS(pa),0),Point(hisTo.minS(pa),0.2))
+            val thetaLine = Segment(Point(-5,-1*paramToTheta(pa)),Point(+5,-1*paramToTheta(pa)))
 
             def run = plotCCD_LLR_ROC(hisTo.asCCD(0),
                         hisTo.asCCD(1),
@@ -678,18 +693,28 @@ object Recipes extends decisions.Shared.LinAlg
                         hisTo.thresholds,
                         cutLine,
                         thetaLine,
-                        hisTo.isocost(pa)
+                        hisTo.isocost(pa),
+                        "demo15"
             )
         }
         /* LLR and ROC for steppy and convex hull to illustrate
            the optimal operating points and its relationship with monotonicity
         */
         object Demo16{
-            def run = ???
+            def run = plotLLR_ROC(hisTo.asLLR,
+                pavTo.asLLR,
+                hisTo.asROC(0),
+                hisTo.asROC(1),
+                pavTo.asROC(0),
+                pavTo.asROC(1),
+                hisTo.thresholds,
+                pavTo.thresholds,
+                "demo16"
+            )
         }
         
         // Get train data, assuming balanced labels
-        val pa = AppParameters(p_w1=0.5,Cmiss=100,Cfa=5)
+        val pa = AppParameters(p_w1=0.5,Cmiss=25,Cfa=5)
         val trainData: Seq[Transaction] = transact(pa.p_w1).sample(1_000)
         val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
 
@@ -792,7 +817,7 @@ object Recipes extends decisions.Shared.LinAlg
         */
 
         // Convert score vectors to histogram counts
-        val numBins = 100
+        val numBins = 30
         val min=loEval.min
         val max=loEval.max
         val w0HistCounts = histogram(nonPreds,numBins,min,max).map(_._2).toVector
@@ -813,14 +838,14 @@ object Recipes extends decisions.Shared.LinAlg
         } yield risk
 
         def simulateDataset: Distribution[Double] = simulateTransact.repeat(1000).map(_.sum / 1000.0)
-        val simRisk: Row = simulateDataset.sample(200).toVector
+        val simRisk: Row = simulateDataset.sample(500).toVector
 
 
         // PAV
         val w0Counts = pav.nonTars
         val w1Counts = pav.targets
         val thresholds: Row = pav.pavFit.bins.map(_.getX)
-        val pavAnalysis = Tradeoff(w1Counts,w0Counts,thresholds)
+        val pavTo = Tradeoff(w1Counts,w0Counts,thresholds)
         //plotCCD_LLR_ROC(pavDist)
         //plotCCD_LLR_ROC(histDist)
         val PP = Matrix(Row(pa.p_w1,1-pa.p_w1))
@@ -847,9 +872,10 @@ object Entry{
     import Recipes._, Part1._
     
     def main(args: Array[String]): Unit = {
-        Demo11.run
-        Demo13.run
+        //Demo11.run
+        //Demo13.run
         Demo14.run
         Demo15.run
+        //Demo16.run
   }
 }
