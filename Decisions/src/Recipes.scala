@@ -525,7 +525,7 @@ object Recipes extends decisions.Shared.LinAlg
                 withYaxis(AxisReference.Y1)
                 
             val llrPAVTrace = Scatter(thresholdsPAV, llrPAV).
-                withName("Monotonous LLR (PAV)").
+                withName("LLR (PAV)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X1).
                 withYaxis(AxisReference.Y1)                 
@@ -537,7 +537,7 @@ object Recipes extends decisions.Shared.LinAlg
                 withYaxis(AxisReference.Y2)
 
             val rocPAVTrace = Scatter(fprPAV, tprPAV).
-                withName("ROC Convex Hull (PAV)").
+                withName("ROC (PAV)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X2).
                 withYaxis(AxisReference.Y2)                
@@ -546,14 +546,12 @@ object Recipes extends decisions.Shared.LinAlg
 
             val layout =  Layout().
                     withTitle("LLR and ROC curves - Histogram vs PAV").
-                    withWidth(700).
+                    withWidth(1000).
                     withHeight(900).
-                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-3,+3))).
-                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.65, 1))).
-                    withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-3,+3))).
-                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0.33, 0.65))).
-                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1))).
-                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(-3,+3)))
+                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-5,+5),title="score (s)")).
+                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.52, 1),title="log-likelihood ratio")).
+                    withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-0.05,0.6),title="False Positive Rate")).
+                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0, 0.48),range=(0,1.05),title="True Positive Rate"))              
 
             Plotly.plot(s"$plotlyRootP/$fName-histVSpav.html", traces, layout)
         }
@@ -727,13 +725,7 @@ object Recipes extends decisions.Shared.LinAlg
         // Demo11
         val loEval = xEval.map(recognizer).map(logit).toVector
         val tarPreds = loEval zip yEval filter{case (lo,y) => y == 1} map {_._1} 
-        val nonPreds = loEval zip yEval filter{case (lo,y) => y == 0} map {_._1}
-
-        // Fit pav on Eval and plot LLR (line chart)
-        // Demo12
-        val pav = new PAV(loEval, yEval, plodds)
-        val (scores, llr) = pav.scoreVSlogodds // scores <-> pavLoEval
-    
+        val nonPreds = loEval zip yEval filter{case (lo,y) => y == 0} map {_._1}   
 
         // Common Language Effect size
         // Naive and wmw-based computations
@@ -840,14 +832,18 @@ object Recipes extends decisions.Shared.LinAlg
         def simulateDataset: Distribution[Double] = simulateTransact.repeat(1000).map(_.sum / 1000.0)
         val simRisk: Row = simulateDataset.sample(500).toVector
 
+        // Fit pav on Eval and plot LLR (line chart)
+        // Demo12
+        val pav = new PAV(loEval, yEval, plodds)
+        // TODO: REMOVE THIS METHOD
+        //val (scores, llr) = pav.scoreVSlogodds // scores <-> pavLoEval 
 
         // PAV
-        val w0Counts = pav.nonTars
-        val w1Counts = pav.targets
-        val thresholds: Row = pav.pavFit.bins.map(_.getX)
-        val pavTo = Tradeoff(w1Counts,w0Counts,thresholds)
-        //plotCCD_LLR_ROC(pavDist)
-        //plotCCD_LLR_ROC(histDist)
+        val w0PavCounts = pav.nonTars
+        val w1PavCounts = pav.targets
+        val pavThresh: Row = pav.pavFit.bins.map(_.getX)
+        val pavTo = Tradeoff(w1PavCounts,w0PavCounts,pavThresh)
+
         val PP = Matrix(Row(pa.p_w1,1-pa.p_w1))
         //assert(pavDist.minRisk(pa)==expectedRisks(PP, pavDist.asPmissPfa, pa.Cfa, pa.Cmiss)) // compare with a manual computation of all risks using PP @ PmissPfa
 
@@ -874,8 +870,8 @@ object Entry{
     def main(args: Array[String]): Unit = {
         //Demo11.run
         //Demo13.run
-        Demo14.run
-        Demo15.run
-        //Demo16.run
+        //Demo14.run
+        //Demo15.run
+        Demo16.run
   }
 }
