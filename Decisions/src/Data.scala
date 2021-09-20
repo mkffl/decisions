@@ -5,6 +5,9 @@ import scala.util
 import smile.classification._
 
 object TransactionsData extends decisions.Shared.LinAlg{
+    // Set a random seed for reproducibility
+    object Distributions extends Distributions(new scala.util.Random(54321))
+
     import RowLinAlg._, MatLinAlg._   
     /*
         f1    f2   f3   f4   f5
@@ -67,5 +70,57 @@ object TransactionsData extends decisions.Shared.LinAlg{
         val mask = Distribution.bernoulli(perc).sample(data.size)
         data zip(mask) filter{case (v,m) => m == 1} map(_._1)
     }
+    object AUC{
+        case class Score(label: Int, s: Double)
+        val p_w1 = 1/2.0
+        
+        def llrw0: Distribution[Double] = for (v <- Distribution.normal) yield (v - 2.0)
+    
+        def gaussBimodal(mode: Int, loc1: Double, scale1: Double, loc2: Double, scale2: Double): Distribution[Double] = mode match {
+            case 0 => Distribution.normal.map(_*scale1+loc1)
+            case 1 => Distribution.normal.map(_*scale2+loc2)
+        }
 
+        def tarScores(p_mode1: Double, loc1: Double, scale1: Double, loc2: Double, scale2: Double): Distribution[Double] = for {
+            mode <- Distribution.bernoulli(1-p_mode1)
+            llr <- gaussBimodal(mode,loc1,scale1,loc2,scale2)
+        } yield llr
+
+    
+        object HighAUC{
+            val p_mode1 = 0.05
+            val (loc1, scale1) = (-2.0, 1.8)
+            val (loc2, scale2) = (0.0, 1.0)
+    
+            def llrw1 = tarScores(p_mode1,loc1,scale1,loc2,scale2)
+            
+            def likelihood(w_i: Int) = w_i match {
+                case 0 => llrw0
+                case 1 => llrw1
+            }
+            
+            def normalLLR = for {
+                label <- Distribution.bernoulli(p_w1)
+                llr <- likelihood(label)
+            } yield Score(label, llr)
+        }
+    
+        object LowAUC{
+            val p_mode1 = 0.4
+            val (loc1, scale1) = (-2.0, 1.0)
+            val (loc2, scale2) = (1.8, 1.0)
+    
+            def llrw1 = tarScores(p_mode1,loc1,scale1,loc2,scale2)
+            
+            def likelihood(w_i: Int) = w_i match {
+                case 0 => llrw0
+                case 1 => llrw1
+            }
+            
+            def normalLLR = for {
+                label <- Distribution.bernoulli(p_w1)
+                llr <- likelihood(label)
+            } yield Score(label, llr)
+        }
+    }
 }

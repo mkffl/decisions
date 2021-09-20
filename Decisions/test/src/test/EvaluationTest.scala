@@ -1,3 +1,11 @@
+/*
+TODO: 
+    - Tradeoff.minRisk is equivalent to Tradeoff.expectedRisks.min
+    - ROC results on dummy counts
+        val w0UnitCnt = Vector(2,10,15,0,8,6,0,0,0)
+        val w1UnitCnt = Vector(0,0,0,3,0,4,8,5,2)
+        val unitThresh = Vector(-3,-2,-1,0,1,2,3,4,5)
+*/
 package decisions
 import utest._
 
