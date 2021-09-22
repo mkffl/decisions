@@ -6,7 +6,7 @@ import smile.classification._
 
 object TransactionsData extends decisions.Shared.LinAlg{
     // Set a random seed for reproducibility
-    object Distributions extends Distributions(new scala.util.Random(54321))
+    object Seed extends Distributions(new scala.util.Random(54323))
 
     import RowLinAlg._, MatLinAlg._   
     /*
@@ -49,16 +49,16 @@ object TransactionsData extends decisions.Shared.LinAlg{
     /* Linear transformation of informative features */
     def repeat(base: Row): Row = (Matrix(base) at redundant).head
 
-    def transact(p_w1: Double): probability_monad.Distribution[Transaction] = for {
-            userDraw <- Distribution.bernoulli(p_w1)
+    def transact(p_w1: Double): Distribution[Transaction] = for {
+            userDraw <- Seed.bernoulli(p_w1)
             ut = if (userDraw==1){Fraudster} else Regular
-            cluster <- Distribution.bernoulli(0.5)
+            cluster <- Seed.bernoulli(0.5)
             cl = if (cluster==1){Cluster1} else Cluster2
-            g1 <- Distribution.normal
-            g2 <- Distribution.normal
-            g3 <- Distribution.normal
-            g4 <- Distribution.normal
-            g5 <- Distribution.normal
+            g1 <- Seed.normal
+            g2 <- Seed.normal
+            g3 <- Seed.normal
+            g4 <- Seed.normal
+            g5 <- Seed.normal
             gaussian = Vector(g1,g2,g3,g4,g5)
             informative = shiftCentroid(ut, cl, gaussian) // Vector of size 5
             repeats = repeat(informative)
@@ -67,22 +67,22 @@ object TransactionsData extends decisions.Shared.LinAlg{
 
     def sample(data: Row, perc: Double) = {
         require(0 < perc && perc < 1)
-        val mask = Distribution.bernoulli(perc).sample(data.size)
+        val mask = Seed.bernoulli(perc).sample(data.size)
         data zip(mask) filter{case (v,m) => m == 1} map(_._1)
     }
     object AUC{
         case class Score(label: Int, s: Double)
         val p_w1 = 1/2.0
         
-        def llrw0: Distribution[Double] = for (v <- Distribution.normal) yield (v - 2.0)
+        def llrw0: Distribution[Double] = for (v <- Seed.normal) yield (v - 2.0)
     
         def gaussBimodal(mode: Int, loc1: Double, scale1: Double, loc2: Double, scale2: Double): Distribution[Double] = mode match {
-            case 0 => Distribution.normal.map(_*scale1+loc1)
-            case 1 => Distribution.normal.map(_*scale2+loc2)
+            case 0 => Seed.normal.map(_*scale1+loc1)
+            case 1 => Seed.normal.map(_*scale2+loc2)
         }
 
         def tarScores(p_mode1: Double, loc1: Double, scale1: Double, loc2: Double, scale2: Double): Distribution[Double] = for {
-            mode <- Distribution.bernoulli(1-p_mode1)
+            mode <- Seed.bernoulli(1-p_mode1)
             llr <- gaussBimodal(mode,loc1,scale1,loc2,scale2)
         } yield llr
 
@@ -90,7 +90,7 @@ object TransactionsData extends decisions.Shared.LinAlg{
         object HighAUC{
             val p_mode1 = 0.05
             val (loc1, scale1) = (-2.0, 1.8)
-            val (loc2, scale2) = (0.0, 1.0)
+            val (loc2, scale2) = (-0.5, 1.0)
     
             def llrw1 = tarScores(p_mode1,loc1,scale1,loc2,scale2)
             
@@ -100,7 +100,7 @@ object TransactionsData extends decisions.Shared.LinAlg{
             }
             
             def normalLLR = for {
-                label <- Distribution.bernoulli(p_w1)
+                label <- Seed.bernoulli(p_w1)
                 llr <- likelihood(label)
             } yield Score(label, llr)
         }
@@ -118,7 +118,7 @@ object TransactionsData extends decisions.Shared.LinAlg{
             }
             
             def normalLLR = for {
-                label <- Distribution.bernoulli(p_w1)
+                label <- Seed.bernoulli(p_w1)
                 llr <- likelihood(label)
             } yield Score(label, llr)
         }

@@ -1,11 +1,3 @@
-/*
-TODO: 
-    - Tradeoff.minRisk is equivalent to Tradeoff.expectedRisks.min
-    - ROC results on dummy counts
-        val w0UnitCnt = Vector(2,10,15,0,8,6,0,0,0)
-        val w1UnitCnt = Vector(0,0,0,3,0,4,8,5,2)
-        val unitThresh = Vector(-3,-2,-1,0,1,2,3,4,5)
-*/
 package decisions
 import utest._
 
@@ -17,9 +9,9 @@ import scala.util
 import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 
-import decisions._
-import decisions.EvalUtils._
+import decisions._, EvalUtils._, TransactionsData._, AUC._
 import java.io._
+import decisions.Shared.Validation
 
 trait TestHelper {    
     case class Precision(val p:Double)
@@ -33,7 +25,8 @@ trait TestHelper {
         (d1-d2).abs <= threshold
 }
 
-object helper {
+object helper extends decisions.Shared.MathHelp with
+                      decisions.Shared.Validation{
     object ECE{
         val pDevT = Array(0.9, 0.98, 0.85, 0.89, 0.65, 0.64, 0.32, 0.38, 0.30)
         val yDevT = Array(1, 1, 0, 1, 1, 0, 0, 0, 1)
@@ -73,6 +66,66 @@ object helper {
         val x =  Vector(0.02, 0.1, 0.18, 0.2, 0.27, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9)
         val y = Vector(0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1)
         val mean =  Vector(0.0, 1/3.0, 1/3.0, 1/3.0, 1/2.0, 1/2.0, 2/3.0, 2/3.0, 2/3.0, 3/4.0, 3/4.0, 3/4.0, 3/4.0, 1.0, 1.0)
+    }
+
+    object ROC{
+        val w0Cnt = Vector(2,10,15,0,8,6,0,0,0) map(_.toDouble)
+        val w1Cnt = Vector(0,0,0,3,0,4,8,5,2) map(_.toDouble)
+        val thresh = Vector(-3,-2,-1,0,1,2,3,4,5)
+
+        /* p(s>cutOff | w_i)
+
+           Calculate tpr and fpr using the same operations as in
+           the Tradeoff class methods but in a different order.
+
+           Unit test order is <Reverse then accumulate then pro-rate>
+           Tradeoff order  is <pro-rate then accumulate then one-minus then reverse>
+        */
+        def rhsRate(cnt: Row): Row = {
+            val N = cnt.sum
+            cnt
+            .reverse
+            .scanLeft(0.0)(_+_)
+            .map(_ / N.toDouble)
+        }
+        val fpr = rhsRate(w0Cnt)
+        val tpr = rhsRate(w1Cnt)
+        val expected = EvalUtils.Matrix(fpr,tpr)
+    }
+
+    object MinimiseRisk{
+        def splitScores(data: List[Score]): Tuple2[Row,Row] = {
+            val tarS = data.filter(_.label==1).map(_.s).toVector
+            val nonS = data.filter(_.label==0).map(_.s).toVector
+            (nonS,tarS)            
+        }
+
+        val pa = AppParameters(0.5,1,1)
+        def hiAUCdata: Distribution[List[Score]] = HighAUC.normalLLR.repeat(50)
+
+        val nbins = 10
+        
+        def score2minrisk(data: List[Score]): Tuple2[Double,Double] = {
+            val tarS = data.filter(_.label==1).map(_.s).toVector
+            val nonS = data.filter(_.label==0).map(_.s).toVector
+            
+            val min = (tarS ++ nonS).min
+            val max = (tarS ++ nonS).max
+            val w0Cnts = histogram(nonS,nbins,min,max).map(_._2).toVector
+            val w1Cnts = histogram(tarS,nbins,min,max).map(_._2).toVector
+            val histThresh = histogram(tarS,nbins,min,max).map(_._1.toDouble).toVector            
+            val to = Recipes.Evals.Tradeoff(w1Cnts, w0Cnts,histThresh)
+            val actual = to.minRisk(pa)
+
+            val PP = EvalUtils.Matrix(EvalUtils.Row(pa.p_w1, 1-pa.p_w1))
+            val expected = minRiskBruteForce(PP,to.asPmissPfa,pa.Cfa,pa.Cmiss)
+
+            (actual,expected)
+        }
+
+        val minRisk = for (dataset <- hiAUCdata) yield score2minrisk(dataset)
+        
+        minRisk.sample(10).foreach{case (actual,expected) => actual ~= expected}
     }
 }
 
@@ -131,6 +184,18 @@ object EvaluationsTests extends TestSuite with TestHelper{ // add EvalUtils as T
             } yield values
             val expected = helper.PAVTestData.mean
             assert(expected.zip(result).filter{tup => tup._1 ~= tup._2}.size == result.size)
+        }
+
+        test("ROC"){
+            val expected = helper.ROC.expected
+            val to = Recipes.Evals.Tradeoff(helper.ROC.w1Cnt,helper.ROC.w0Cnt,helper.ROC.thresh)
+            val actual = to.asROC
+            assert(expected(0).zip(actual(0)).filter{tup => tup._1 ~= tup._2}.size == actual.size)
+            assert(expected(1).zip(actual(1)).filter{tup => tup._1 ~= tup._2}.size == actual.size)
+        }
+
+        test("MinimiseRisk"){
+
         }
 
         test("CalibrationError"){

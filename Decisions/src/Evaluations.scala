@@ -1,8 +1,11 @@
 package decisions
-import plotly._, element._, layout._, Plotly._ 
+
 import collection.JavaConverters._
-import be.cylab.java.roc.Roc
+import scala.language.postfixOps
 import scala.util
+
+import plotly._, element._, layout._, Plotly._ 
+import be.cylab.java.roc.Roc
 import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 import smile.classification._
@@ -201,4 +204,24 @@ object EvalUtils extends decisions.Shared.LinAlg{
         //(pMiss.map(_.toDouble).toVector, pFa.map(_.toDouble).toVector)
         Vector(pMiss.toVector, pFa.toVector)
     }
+
+    /* Minimum expected risks for a Sequence of prior probabilities
+
+        Brute force method i.e. compute the expected risk at every operating point
+        then look for the minimum.
+        Should give the same result as the likelihood approach llr = -θ.
+        In practice it's ok to use this approach, especially with PAV bins, 
+        because there are not many points to traverse.
+        
+        * PP is (n,2) i.e. rows of (p_w0,p_w1)
+        * pMissPfa is (2,m) i.e. columns of ((Pmiss),(Pfa))
+        * Returns (PP * Matrix(Row(Cfa,Cmiss)) ) @ pMisspFa
+    */
+    def minRiskBruteForce(PP: Matrix, pMissPfa: Matrix, Cfa: Double, Cmiss: Double): Double = {
+        val priorCosts: Matrix = for (row <- PP) yield row match {
+            case Vector(p_w1,p_w0) => Row(p_w1*Cmiss,p_w0*Cfa)
+            case _ => Row(-10,-10) // Something's off, insert crazy values to flag the issue
+        }
+        priorCosts at pMissPfa apply(0) min
+    }    
 }

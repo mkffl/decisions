@@ -178,6 +178,16 @@ package object Shared{
             }
         
         // Define some of the common operations to estimate distributions
+        def clipToFinite(data: Row) = {
+            val finite = data.filter(_.isFinite)
+            val max = finite.max
+            val min = finite.min
+            data.map{case v if v.isNegInfinity => min
+                     case v if v.isPosInfinity => max
+                     case v => v
+            }
+        }
+
         val proportion: Row => Row = counts => {
             val S = counts.sum.toDouble
             counts.map(v => v/S)

@@ -274,6 +274,33 @@ object Recipes extends decisions.Shared.LinAlg
     // Plotly recipes
     object Plots{
         import Evals._
+
+
+        def annotate(x: Double,
+                y: Double,
+                xref: Int,
+                yref: Int,
+                text: String,
+                showarrow: Boolean = false
+        ): Annotation = new Annotation().
+                withXref(xref match {case 1 => Ref.Axis(AxisReference.X1)
+                        case 2 => Ref.Axis(AxisReference.X2)
+                        case 3 => Ref.Axis(AxisReference.X3)
+                        case 4 => Ref.Axis(AxisReference.X4)
+                }).
+                withYref(xref match {case 1 => Ref.Axis(AxisReference.Y1)
+                        case 2 => Ref.Axis(AxisReference.Y2)
+                        case 3 => Ref.Axis(AxisReference.Y3)
+                        case 4 => Ref.Axis(AxisReference.Y4)
+                }).
+                withX(x).
+                withY(y).
+                withText(text).
+                withShowarrow(showarrow)
+
+            //xref = xref match {case 1 => }
+        //)
+
         def lineShape(x0: Double,
                     y0: Double,
                     x1: Double,
@@ -549,7 +576,7 @@ object Recipes extends decisions.Shared.LinAlg
                     withWidth(1000).
                     withHeight(900).
                     withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 1),range=(-5,+5),title="score (s)")).
-                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.52, 1),title="log-likelihood ratio")).
+                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.52, 1),title="Log-likelihood ratio")).
                     withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 1),range=(-0.05,0.6),title="False Positive Rate")).
                     withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0, 0.48),range=(0,1.05),title="True Positive Rate"))              
 
@@ -568,31 +595,36 @@ object Recipes extends decisions.Shared.LinAlg
                     minusθRight: Segment,
                     isocostLeft: Segment,
                     isocostRight: Segment,
+                    annotations: Option[Seq[Annotation]],
                     fName: String
         ) = {
             val llrLeftTrace = Scatter(threshLeft, llrLeft).
                 withName("LLR (High AUC Recognizer)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X1).
-                withYaxis(AxisReference.Y1)
+                withYaxis(AxisReference.Y1).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 2.5))
                 
             val llrRightTrace = Scatter(threshRight, llrRight).
                 withName("LLR (Low AUC Recognizer)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X3).
-                withYaxis(AxisReference.Y3)                 
+                withYaxis(AxisReference.Y3).
+                withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
 
             val rocLeftTrace = Scatter(fprLeft, tprLeft).
                 withName("ROC (High AUC Recognizer)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X2).
-                withYaxis(AxisReference.Y2)
+                withYaxis(AxisReference.Y2).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 2.5))
 
             val rocRightTrace = Scatter(fprRight, tprRight).
                 withName("ROC (Low AUC Recognizer)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X4).
-                withYaxis(AxisReference.Y4)      
+                withYaxis(AxisReference.Y4).
+                withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
 
             val traces = Seq(llrLeftTrace,llrRightTrace,rocLeftTrace,rocRightTrace)
 
@@ -601,21 +633,24 @@ object Recipes extends decisions.Shared.LinAlg
             val thetaRight = minusθRight match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x3","y3")}
             val rocLeft = isocostLeft match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x2","y2")}
             val rocRight = isocostRight match {case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x4","y4")}
+            
             val shapes = Seq(thetaLeft,thetaRight,rocLeft,rocRight)
 
             val layout =  Layout().
-                    withTitle("LLR and ROC curves - Histogram vs PAV").
-                    withWidth(1000).
-                    withHeight(1000).
-                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 0.48),range=(-5,+5),title="score (s)")).
-                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.52, 1),title="log-likelihood ratio")).
+                    withTitle("High AUC (Left) vs Low AUC (Right)").
+                    withWidth(1300).
+                    withHeight(800).
+                    withLegend(Legend().withX(0.05).withY(-0.3).withOrientation(Orientation.Horizontal).withYanchor(Anchor.Bottom).withXanchor(Anchor.Middle)). //(x=0.5,y=-0.3,xanchor=Anchor.Bottom,yanchor=Anchor.Bottom)).
+                    withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),domain=(0, 0.48),range=(-3.5,+3.5),title="s")).
+                    withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),domain=(0.55, 1),range=(-3.5,+3.5),title="Log-likelihood ratio")).
                     withXaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.Y2),domain=(0, 0.48),range=(-0.05,1.1),title="False Positive Rate")).
-                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0, 0.48),range=(-0.05,1.1),title="True Positive Rate")).
-                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0.52, 1),range=(-5,+5),title="score (s)")).
-                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0.52, 1),title="log-likelihood ratio")).
+                    withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0, 0.45),range=(-0.05,1.1),title="True Positive Rate")).
+                    withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0.52, 1),range=(-3.5,+3.5),title="s")).
+                    withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0.55, 1),range=(-3.5,+3.5),title="Log-likelihood ratio")).
                     withXaxis4(Axis(anchor=AxisAnchor.Reference(AxisReference.Y4),domain=(0.52, 1),range=(-0.05,1.1),title="False Positive Rate")).
-                    withYaxis4(Axis(anchor=AxisAnchor.Reference(AxisReference.X4),domain=(0, 0.48),range=(-0.05,1.1),title="True Positive Rate")).                                        
-                    withShapes(shapes)
+                    withYaxis4(Axis(anchor=AxisAnchor.Reference(AxisReference.X4),domain=(0, 0.45),range=(-0.05,1.1),title="True Positive Rate")).                                        
+                    withShapes(shapes).
+                    withAnnotations(annotations)
 
             Plotly.plot(s"$plotlyRootP/$fName-llrRoc4panes.html", traces, layout)
         }
@@ -638,7 +673,10 @@ object Recipes extends decisions.Shared.LinAlg
                 Vector(w0pdf,w1pdf)
             }
 
-            val asLLR: Row = logodds((pdf(w0Counts),pdf(w1Counts)))
+            val asLLR: Row = {
+                val infLLR = logodds((pdf(w0Counts),pdf(w1Counts)))
+                clipToFinite(infLLR)
+            }
 
             val asPmissPfa: Matrix = {
                 val pMiss = cdf(w1Counts) // lhsArea of p(x|w1)
@@ -696,7 +734,7 @@ object Recipes extends decisions.Shared.LinAlg
                 )
                 Segment(Point(x1,y1),Point(x2,y2))
             }
-        }        
+        }    
     }
 
     // TODO: ROC for AUC comparison
@@ -784,8 +822,16 @@ object Recipes extends decisions.Shared.LinAlg
                 println(p)
                 assert(p > (1-α))
                 */
-
                 val minusθ = Segment(Point(-5,hiTo.minusθ(aucPa)),Point(+5,hiTo.minusθ(aucPa)))
+
+                val commentary = Some(Seq(annotate(0.8,0.6,2,2,f"AUC = $hiAuc%.2f"),
+                                annotate(0.8,0.6,4,4,f"AUC = $lowAuc%.2f"),
+                                annotate(0.8,0.5,2,2,f"Min Risk = ${hiTo.minRisk(aucPa)}%.2f"),
+                                annotate(0.8,0.5,4,4,f"Min Risk = ${lowTo.minRisk(aucPa)}%.2f"),
+                                annotate(-2,3,1,1,f"-θ = ${hiTo.minusθ(aucPa)}%.1f",true),
+                                annotate(0.03,0.8,2,2,f"slope = -θ = ${lowTo.minusθ(aucPa)}%.1f",true),
+                                annotate(0.03,0.8,4,4,f"slope = -θ = ${lowTo.minusθ(aucPa)}%.1f",true),
+                ))
 
                 plotLLR_ROC_4Panes(hiTo.asLLR,
                     lowTo.asLLR,
@@ -799,6 +845,7 @@ object Recipes extends decisions.Shared.LinAlg
                     minusθ,
                     hiTo.isocost(aucPa),
                     lowTo.isocost(aucPa),
+                    commentary,
                     "Demo17"
                 )
             }
@@ -947,19 +994,6 @@ object Recipes extends decisions.Shared.LinAlg
         val PP = Matrix(Row(pa.p_w1,1-pa.p_w1))
         //assert(pavDist.minRisk(pa)==expectedRisks(PP, pavDist.asPmissPfa, pa.Cfa, pa.Cmiss)) // compare with a manual computation of all risks using PP @ PmissPfa
 
-        /* Expected risks for sequences of priors
-            * PP is (n,2) i.e. rows of (p_w0,p_w1)
-            * pMissPfa is (2,m) i.e. columns of ((Pmiss),(Pfa))
-            * Returns (PP * Matrix(Row(Cfa,Cmiss)) ) @ pMisspFa
-        */
-        def expectedRisks(PP: Matrix, pMissPfa: Matrix, Cfa: Double, Cmiss: Double): Double = {
-            val priorCosts: Matrix = for (row <- PP) yield row match {
-                case Vector(p_w1,p_w0) => Row(p_w1*Cmiss,p_w0*Cfa)
-                case _ => Row(-10,-10) // Something's off, insert crazy values to flag the issue
-            }
-            priorCosts at pMissPfa apply(0) min
-        }
-
         // AUC and Risk
 
         def splitScores(data: List[Score]): Tuple2[Row,Row] = {
@@ -972,8 +1006,8 @@ object Recipes extends decisions.Shared.LinAlg
             val (nonS,tarS) = splitScores(data)
             smartA(nonS,tarS)            
         }
-        def hiAUCdata: Distribution[List[Score]] = HighAUC.normalLLR.repeat(500)
-        def lowAUCdata: Distribution[List[Score]] = LowAUC.normalLLR.repeat(500)
+        def hiAUCdata: Distribution[List[Score]] = HighAUC.normalLLR.repeat(1000)
+        def lowAUCdata: Distribution[List[Score]] = LowAUC.normalLLR.repeat(1000)
 
         def simAUC: Distribution[Double] = for {
             h <- hiAUCdata
@@ -986,6 +1020,9 @@ object Recipes extends decisions.Shared.LinAlg
         val hiEval: List[Score] = hiAUCdata.sample(1)(0)
         val lowEval: List[Score] = lowAUCdata.sample(1)(0)
 
+        val hiAuc = score2Auc(hiEval)
+        val lowAuc = score2Auc(lowEval)
+
         val hiSplit: List[Tuple2[Double,Int]] = for (obs <- hiEval) yield (obs.s, obs.label)
         val (hiScores,hiLabels) = hiSplit.toVector.unzip
         val lowSplit: List[Tuple2[Double,Int]] = for (obs <- lowEval) yield (obs.s, obs.label)
@@ -997,12 +1034,12 @@ object Recipes extends decisions.Shared.LinAlg
         val w0HiCnts = hiPav.nonTars
         val w1HiCnts = hiPav.targets
         val hiThresh = hiPav.pavFit.bins.map(_.getX)
+        
         val w0LowCnts = lowPav.nonTars
-
         val w1LowCnts = lowPav.targets
         val lowThresh = lowPav.pavFit.bins.map(_.getX)        
 
-        val aucPa = AppParameters(0.5,5,50)
+        val aucPa = AppParameters(0.5,5,80)
         val aucTheta = paramToTheta(aucPa)
 
         val hiTo = Tradeoff(w1HiCnts,w0HiCnts,hiThresh)
@@ -1024,7 +1061,6 @@ object Recipes extends decisions.Shared.LinAlg
         val w1LowCntsHist = histogram(lowEval.filter(_.label==1).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
         val lowHistThresh =  histogram(lowEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._1.toDouble).toVector
         val lowHisTo = Tradeoff(w1LowCntsHist,w0LowCntsHist,lowHistThresh)
-
     }
 }
 
