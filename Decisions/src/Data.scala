@@ -4,11 +4,11 @@ import probability_monad._
 import scala.util
 import smile.classification._
 
-object TransactionsData extends decisions.Shared.LinAlg{
+import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._, CollectionsStats._
+
+object TransactionsData{
     // Set a random seed for reproducibility
     object Seed extends Distributions(new scala.util.Random(54323))
-
-    import RowLinAlg._, MatLinAlg._   
     /*
         f1    f2   f3   f4   f5
     array([[ 1., -1., -1., -1.,  1.], --w0

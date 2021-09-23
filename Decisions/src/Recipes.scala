@@ -24,7 +24,9 @@ import decisions.SmileKitLearn._
 import decisions.SmileFrame._
 import decisions.Dataset._
 //import decisions.Systems._
+import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._, CollectionsStats._
 import decisions.EvalUtils._
+import decisions.Tradeoff._
 
 
 /* A full run from data generation to APE-based comparisons
@@ -200,14 +202,7 @@ object CompareSystems extends decisions.Shared.LinAlg
     }
 */
 
-object Recipes extends decisions.Shared.LinAlg 
-                        with decisions.Shared.MathHelp
-                        with decisions.Shared.FileIO
-                        with decisions.Systems
-                        with decisions.Shared.Validation{
-    import CollectionsStats._
-    import MatLinAlg._, RowLinAlg._
-
+object Recipes extends decisions.Systems{
     object Data{
         val p_w1 = 0.3
         val trainData: Seq[Transaction] = transact(p_w1).sample(1_000) // Base value is 1_000
@@ -273,9 +268,6 @@ object Recipes extends decisions.Shared.LinAlg
 
     // Plotly recipes
     object Plots{
-        import Evals._
-
-
         def annotate(x: Double,
                 y: Double,
                 xref: Int,
@@ -555,7 +547,7 @@ object Recipes extends decisions.Shared.LinAlg
                 withName("LLR (PAV)").
                 withMode(ScatterMode(ScatterMode.Lines)).
                 withXaxis(AxisReference.X1).
-                withYaxis(AxisReference.Y1)                 
+                withYaxis(AxisReference.Y1)
 
             val rocTrace = Scatter(fpr, tpr).
                 withName("ROC (histogram)").
@@ -656,92 +648,9 @@ object Recipes extends decisions.Shared.LinAlg
         }
     }
 
-    object Evals{
-        case class Point(x: Double,y: Double)
-        case class Segment(p1: Point, p2: Point)
-
-        case class Tradeoff(w1Counts: Vector[Double], w0Counts: Vector[Double], thresholds: Vector[Double]) {
-            val N = w1Counts.size
-            require(w0Counts.size == N)
-            require(thresholds.size == N)
-
-            /* Various ways to present the score distributions */
-
-            val asCCD: Matrix = {
-                val w0pdf = pdf(w0Counts)
-                val w1pdf = pdf(w1Counts)
-                Vector(w0pdf,w1pdf)
-            }
-
-            val asLLR: Row = {
-                val infLLR = logodds((pdf(w0Counts),pdf(w1Counts)))
-                clipToFinite(infLLR)
-            }
-
-            val asPmissPfa: Matrix = {
-                val pMiss = cdf(w1Counts) // lhsArea of p(x|w1)
-                val pFa = rhsArea(w0Counts) // Same as fpr but in the asc order of scores
-                Vector(pMiss,pFa)
-            }
-
-            val asROC: Matrix = {
-                val fpr = (rhsArea andThen decreasing)(w0Counts)
-                val tpr = (rhsArea andThen decreasing)(w1Counts)
-                Vector(fpr,tpr)
-            }
-
-            def asDET: Matrix = ???
-            
-            /* Given application parameters, return optimal threshold and the corresponding expected risk */
-
-            /* Find score cut-off point that minimises Risk by finding
-            where LLRs intersect -θ.
-            Return the corresponding index in the score Vector.
-            */
-            def minusθ(pa: AppParameters) = -1*paramToTheta(pa)
-
-            def argminRisk(pa: AppParameters): Int = this.asLLR.getClosestIndex(minusθ(pa))
-
-            def expectedRisks(pa: AppParameters): Row = {
-                val risk: Tuple2[Double,Double] => Double = paramToRisk(pa)
-                this.asPmissPfa.transpose.map{case Vector(pMiss,pFa) => risk((pMiss,pFa))}
-            }
-
-            def minS(pa: AppParameters): Double = {
-                val ii = argminRisk(pa)
-                thresholds(ii)
-            }
-
-            def minRisk(pa: AppParameters): Double = {
-                val ii = argminRisk(pa)
-                val bestPmissPfa = (this.asPmissPfa.apply(0)(ii),this.asPmissPfa.apply(1)(ii))
-                paramToRisk(pa)(bestPmissPfa)
-                //== expectedRisks(pa)(ii)
-            }
-
-            def ber(p_w1: Double): Double = minRisk(AppParameters(p_w1,1,1))
-
-            def affine(y1: Double, x1: Double, x2: Double, slope: Double) = y1 + (x2-x1)*slope
-
-            def isocost(pa: AppParameters): Segment = {
-                val slope = exp(-1*paramToTheta(pa))
-                val ii = argminRisk(pa)
-                val roc = this.asROC
-                val (bfpr, btpr) = (roc(0).reverse(ii), roc(1).reverse(ii)) // .reverse because roc curves are score inverted
-                val (x1,x2) = (roc(0)(0), roc(0).last)
-                val (y1, y2) = (affine(btpr,bfpr,x1,slope),
-                                affine(btpr,bfpr,x2,slope)
-                )
-                Segment(Point(x1,y1),Point(x2,y2))
-            }
-        }    
-    }
-
-    // TODO: ROC for AUC comparison
-
     // Data examples and analyses
     object Part1{
-        import Plots._, Data._, FitSystems._, Evals._
+        import Plots._, Data._, FitSystems._
         object Demo11{
             def run = plotCCD(hisTo.asCCD(0),hisTo.asCCD(1),hisTo.thresholds,"demo11")
         }

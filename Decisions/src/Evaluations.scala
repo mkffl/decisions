@@ -10,13 +10,18 @@ import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 import smile.classification._
 import smile.math.MathEx.{logistic, min}
-import scala.math.{abs, floor, round}
+import scala.math.{abs, floor, round, log}
+
+import decisions.TransactionsData._
+import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._, CollectionsStats._
 
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType
 import org.apache.commons.math3.optim.MaxEval 
 import org.apache.commons.math3.optim.univariate.SearchInterval
 import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction
 import org.apache.commons.math3.optim.univariate.BrentOptimizer 
+
+case class AppParameters(p_w1: Double, Cmiss: Double, Cfa: Double)
 
 /*
 Every error estimator needs a logodds to probability converter
@@ -27,8 +32,7 @@ The curve is the latent representation; a representation of the classifier in th
 (pFa, pMiss space). The observed errors don't explicitly compute the operating points
 from the scores but do compute them from the prior log-odds (equivalent??)
 */
-trait ErrorEstimator extends decisions.Shared.LinAlg
-                     with decisions.Shared.MathHelp{
+trait ErrorEstimator{
     def logoddsToProbability(priorLogOdds: Row): Matrix = {
         val pTar: Row = priorLogOdds.map(logistic)
         val pNon: Row = priorLogOdds.map(x => logistic(-x))
@@ -100,7 +104,92 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
 }
 
 
-object EvalUtils extends decisions.Shared.LinAlg{
+object Tradeoff{
+
+    import EvalUtils._
+    import CollectionsStats._
+
+    case class Point(x: Double,y: Double)
+    case class Segment(p1: Point, p2: Point)
+
+    case class Tradeoff(w1Counts: Vector[Double], w0Counts: Vector[Double], thresholds: Vector[Double]) {
+        val N = w1Counts.size
+        require(w0Counts.size == N)
+        require(thresholds.size == N)
+
+        /* Various ways to present the score distributions */
+
+        val asCCD: Matrix = {
+            val w0pdf = pdf(w0Counts)
+            val w1pdf = pdf(w1Counts)
+            Vector(w0pdf,w1pdf)
+        }
+
+        val asLLR: Row = {
+            val infLLR = logodds((pdf(w0Counts),pdf(w1Counts)))
+            clipToFinite(infLLR)
+        }
+
+        val asPmissPfa: Matrix = {
+            val pMiss = cdf(w1Counts) // lhsArea of p(x|w1)
+            val pFa = rhsArea(w0Counts) // Same as fpr but in the asc order of scores
+            Vector(pMiss,pFa)
+        }
+
+        val asROC: Matrix = {
+            val fpr = (rhsArea andThen decreasing)(w0Counts)
+            val tpr = (rhsArea andThen decreasing)(w1Counts)
+            Vector(fpr,tpr)
+        }
+
+        def asDET: Matrix = ???
+        
+        /* Given application parameters, return optimal threshold and the corresponding expected risk */
+
+        /* Find score cut-off point that minimises Risk by finding
+        where LLRs intersect -θ.
+        Return the corresponding index in the score Vector.
+        */
+        def minusθ(pa: AppParameters) = -1*paramToTheta(pa)
+
+        def argminRisk(pa: AppParameters): Int = this.asLLR.getClosestIndex(minusθ(pa))
+
+        def expectedRisks(pa: AppParameters): Row = {
+            val risk: Tuple2[Double,Double] => Double = paramToRisk(pa)
+            this.asPmissPfa.transpose.map{case Vector(pMiss,pFa) => risk((pMiss,pFa))}
+        }
+
+        def minS(pa: AppParameters): Double = {
+            val ii = argminRisk(pa)
+            thresholds(ii)
+        }
+
+        def minRisk(pa: AppParameters): Double = {
+            val ii = argminRisk(pa)
+            val bestPmissPfa = (this.asPmissPfa.apply(0)(ii),this.asPmissPfa.apply(1)(ii))
+            paramToRisk(pa)(bestPmissPfa)
+            //== expectedRisks(pa)(ii)
+        }
+
+        def ber(p_w1: Double): Double = minRisk(AppParameters(p_w1,1,1))
+
+        def affine(y1: Double, x1: Double, x2: Double, slope: Double) = y1 + (x2-x1)*slope
+
+        def isocost(pa: AppParameters): Segment = {
+            val slope = exp(-1*paramToTheta(pa))
+            val ii = argminRisk(pa)
+            val roc = this.asROC
+            val (bfpr, btpr) = (roc(0).reverse(ii), roc(1).reverse(ii)) // .reverse because roc curves are score inverted
+            val (x1,x2) = (roc(0)(0), roc(0).last)
+            val (y1, y2) = (affine(btpr,bfpr,x1,slope),
+                            affine(btpr,bfpr,x2,slope)
+            )
+            Segment(Point(x1,y1),Point(x2,y2))
+        }
+    }    
+}
+
+object EvalUtils extends{
     import RowLinAlg._, MatLinAlg._
     /*  - Method to get the PAV bins, i.e. the PAV-merged points.
         - Handle kotlin to scala type conversion to hide it from the main PAV class.
@@ -223,5 +312,26 @@ object EvalUtils extends decisions.Shared.LinAlg{
             case _ => Row(-10,-10) // Something's off, insert crazy values to flag the issue
         }
         priorCosts at pMissPfa apply(0) min
-    }    
+    }
+
+    def cost(p: AppParameters, actual: User, pred: User): Double = pred match {
+            case Fraudster if actual == Regular => p.Cfa
+            case Regular if actual == Fraudster => p.Cmiss
+            case _ => 0.0
+    }
+
+    def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
+
+    /*  Expected Risk using evaluation data at a particular operating point
+
+        E(r) = Cmiss.p(ω1).∫p(x<c|ω1)dx + Cfa.p(ω0).∫p(x>c|ω0)dx
+            = Cmiss.p(ω1).Pmiss + Cfa.p(ω0).Pfa
+        c: cutoff point to evaluate
+
+        @param pa the application's prior probability and cost of miss and false alarm
+        @param operatingPoint the probability of miss and false alarm
+        @return the expected risk
+    */        
+    def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = 
+            pa.p_w1*operatingPoint._1*pa.Cmiss + (1-pa.p_w1)*operatingPoint._2*pa.Cfa    
 }

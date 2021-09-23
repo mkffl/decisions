@@ -6,7 +6,12 @@ import smile.math.MathEx.{logistic, min, log}
 import decisions.TransactionsData._
 
 package object Shared{
-    trait FileIO {
+    type Row = Vector[Double]
+    type Matrix = Vector[Vector[Double]]
+
+    def Row[T](xs: T*) = Vector(xs: _*)
+    def Matrix(xs: Row*) = Vector(xs: _*)
+    object FileIO {
         def writeFile(filename: String, lines: Seq[String], headers: String): Unit = {
             val file = new File(filename)
             val bw = new BufferedWriter(new FileWriter(file))
@@ -24,14 +29,7 @@ package object Shared{
         def stringifyVector(data: Vector[Double]): String = data.map(value => s"$value,").mkString.stripSuffix(",")
     }
 
-    trait LinAlg{
-
-        type Row = Vector[Double]
-        type Matrix = Vector[Vector[Double]]
-
-        def Row[T](xs: T*) = Vector(xs: _*)
-        def Matrix(xs: Row*) = Vector(xs: _*)
-
+    object LinAlg{
         implicit def intToDoubleMat(mat: Vector[Vector[Int]]): Matrix = 
             for (row <- mat) 
                 yield for (value <- row) 
@@ -95,7 +93,7 @@ package object Shared{
                 new MatLinAlg(a)
         }
     }
-    trait MathHelp{
+    object Stats{
 
         def logit(x: Double): Double = {
             log(x/(1-x))
@@ -204,29 +202,4 @@ package object Shared{
         val logodds: Tuple2[Row,Row] => Row = odds andThen logarithm
 
     } 
-
-    trait Validation {
-        case class AppParameters(p_w1: Double, Cmiss: Double, Cfa: Double)
-
-        def cost(p: AppParameters, actual: User, pred: User): Double = pred match {
-                case Fraudster if actual == Regular => p.Cfa
-                case Regular if actual == Fraudster => p.Cmiss
-                case _ => 0.0
-        }
-
-        def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
-
-        /*  Expected Risk using evaluation data at a particular operating point
-
-            E(r) = Cmiss.p(ω1).∫p(x<c|ω1)dx + Cfa.p(ω0).∫p(x>c|ω0)dx
-                = Cmiss.p(ω1).Pmiss + Cfa.p(ω0).Pfa
-            c: cutoff point to evaluate
-
-            @param pa the application's prior probability and cost of miss and false alarm
-            @param operatingPoint the probability of miss and false alarm
-            @return the expected risk
-        */        
-        def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = 
-                pa.p_w1*operatingPoint._1*pa.Cmiss + (1-pa.p_w1)*operatingPoint._2*pa.Cfa
-    }
 }

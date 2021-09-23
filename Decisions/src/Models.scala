@@ -6,6 +6,7 @@ import smile.io.Read
 
 import org.apache.commons.csv.CSVFormat 
 
+import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._, CollectionsStats._
 import decisions.TransactionsData._
 import java.util.Properties
 
@@ -34,7 +35,7 @@ trait Systems{
 
 
 
-class SmileKitLearn[T](model: T) extends decisions.Shared.MathHelp{
+class SmileKitLearn[T](model: T){
     def predictproba(data: Array[Array[Double]]): Array[Double] = model match {
         case m:LogisticRegression => {
             val tempScore = new Array[Double](2) // 2 classes
@@ -90,7 +91,7 @@ object SmileKitLearn {
 
 
 
-class SmileFrame(data: Array[Transaction]) extends decisions.Shared.FileIO{
+class SmileFrame(data: Array[Transaction]){
     /* Converts an Array[Array[AnyVal]] to a Smile DataFrame. 
     
     Achieved by saving the array to CSV and loading it back. That's not great, but it's all I have
