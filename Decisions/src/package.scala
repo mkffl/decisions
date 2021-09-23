@@ -176,10 +176,10 @@ package object Shared{
             }
         
         // Define some of the common operations to estimate distributions
-        def clipToFinite(data: Row) = {
+        def clipToFinite(data: Row, e: Double = 1e-6) = {
             val finite = data.filter(_.isFinite)
-            val max = finite.max
-            val min = finite.min
+            val max = finite.max + e
+            val min = finite.min - e
             data.map{case v if v.isNegInfinity => min
                      case v if v.isPosInfinity => max
                      case v => v
@@ -200,6 +200,18 @@ package object Shared{
         val cdf: Row => Row = pdf andThen cumulative
         val rhsArea: Row => Row = cdf andThen oneMinus
         val logodds: Tuple2[Row,Row] => Row = odds andThen logarithm
+
+        /* Enforce floor counts of 1 to work around +/- inf values in LLR.
+
+            Infinite likelihood-ratio values are particularly prevalent in thresholds near the edge, e.g. the counts of
+            w0 near the max scores could be 0. This method replaces +/- inf LLR with small/big values, ensuring that they
+            are considered for the optimal threshold (argminRisk).
+
+        */
+        def clipTo1(x: Int) = x match {
+            case cnt if cnt == 0 => 1
+            case cnt => cnt
+        }
 
     } 
 }

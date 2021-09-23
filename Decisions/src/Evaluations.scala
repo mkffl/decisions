@@ -104,15 +104,30 @@ class PAV(scores: Vector[Double], labels: Vector[Int], priorLogOdds: Vector[Doub
 }
 
 
-object Tradeoff{
-
+object To{
     import EvalUtils._
-    import CollectionsStats._
-
     case class Point(x: Double,y: Double)
     case class Segment(p1: Point, p2: Point)
 
-    case class Tradeoff(w1Counts: Vector[Double], w0Counts: Vector[Double], thresholds: Vector[Double]) {
+    /*
+        w0Counts: counts of non-target labels
+        w1Counts: counts of target labels
+        thresh: bins
+    */
+    def makeHisTo(loEval: Row, yEval: Vector[Int], numBins: Int = 30): Tradeoff = {
+        val tarPreds = loEval zip yEval filter{case (lo,y) => y == 1} map {_._1} 
+        val nonPreds = loEval zip yEval filter{case (lo,y) => y == 0} map {_._1}            
+
+        val min=loEval.min
+        val max=loEval.max
+        val w0Counts = histogram(nonPreds,numBins,min,max).map(_._2).toVector
+        val w1Counts = histogram(tarPreds,numBins,min,max).map(_._2).toVector
+        val thresh = histogram(tarPreds,numBins,min,max).map(_._1.toDouble).toVector
+        
+        Tradeoff(w1Counts,w0Counts,thresh)
+    }
+
+    case class Tradeoff(w1Counts: Row, w0Counts: Row, thresholds: Row) {
         val N = w1Counts.size
         require(w0Counts.size == N)
         require(thresholds.size == N)
@@ -144,14 +159,17 @@ object Tradeoff{
 
         def asDET: Matrix = ???
         
-        /* Given application parameters, return optimal threshold and the corresponding expected risk */
+        /* Optimal threshold given application parameters.
 
-        /* Find score cut-off point that minimises Risk by finding
-        where LLRs intersect -θ.
-        Return the corresponding index in the score Vector.
+            Find score cut-off point that minimises Risk by finding
+            where LLRs intersect -θ. Takes the closest LLR value rather 
+            than the first value above or equal to -θ.
+
+            Note that values based on cdf, e.g. PmissPfa or ROC, need to
+            use (argminRisk+1) because they have one more value.
+        
+            @Return The position in the 0-indexed score vector.
         */
-        def minusθ(pa: AppParameters) = -1*paramToTheta(pa)
-
         def argminRisk(pa: AppParameters): Int = this.asLLR.getClosestIndex(minusθ(pa))
 
         def expectedRisks(pa: AppParameters): Row = {
@@ -166,20 +184,17 @@ object Tradeoff{
 
         def minRisk(pa: AppParameters): Double = {
             val ii = argminRisk(pa)
-            val bestPmissPfa = (this.asPmissPfa.apply(0)(ii),this.asPmissPfa.apply(1)(ii))
+            val bestPmissPfa = (this.asPmissPfa.apply(0)(ii+1),this.asPmissPfa.apply(1)(ii+1))
             paramToRisk(pa)(bestPmissPfa)
-            //== expectedRisks(pa)(ii)
         }
 
         def ber(p_w1: Double): Double = minRisk(AppParameters(p_w1,1,1))
 
-        def affine(y1: Double, x1: Double, x2: Double, slope: Double) = y1 + (x2-x1)*slope
-
         def isocost(pa: AppParameters): Segment = {
-            val slope = exp(-1*paramToTheta(pa))
+            val slope = exp(minusθ(pa))
             val ii = argminRisk(pa)
             val roc = this.asROC
-            val (bfpr, btpr) = (roc(0).reverse(ii), roc(1).reverse(ii)) // .reverse because roc curves are score inverted
+            val (bfpr, btpr) = (roc(0).reverse(ii+1), roc(1).reverse(ii+1)) // .reverse because roc curves are score inverted
             val (x1,x2) = (roc(0)(0), roc(0).last)
             val (y1, y2) = (affine(btpr,bfpr,x1,slope),
                             affine(btpr,bfpr,x2,slope)
@@ -189,8 +204,66 @@ object Tradeoff{
     }    
 }
 
-object EvalUtils extends{
-    import RowLinAlg._, MatLinAlg._
+object Concordance{
+    // Common Language Effect size
+    // Naive and wmw-based computations
+    def getPermutations(A: Row, B: Row): Vector[Tuple2[Double,Double]] = for {
+            a <- A
+            b <- B
+        } yield (a,b)
+
+    /* count [score_w1 > score_w0] */
+    def TarSupN(non:Row, tar:Row): Int = getPermutations(non,tar) filter {score => score._2 > score._1} size
+    
+    /* Estimate P(score_w1 > score_w0) */
+    def naiveA(non: Row, tar: Row): Double = {
+        val num = TarSupN(non,tar)
+        val den = non.size*tar.size
+        num/den.toDouble
+    }
+
+    /* Rank values with tied averages
+        Inpupt: Vector(4.5, -3.2, 1.2, 5.6, 1.2, 1.2)
+        Output: Vector(5,   -1,   3,   6,   3,   3  )
+    */    
+    def rankAvgTies(input: Row): Row = {
+        // Helper to identify fields in the tuple cobweb
+        case class Rank(value: Double,index: Integer,rank: Integer)
+
+        val enhanced = input.zipWithIndex.
+                        sortBy(_._1).zipWithIndex.
+                        map{case ((lo,index),rank) => Rank(lo,index,rank+1)}
+        val avgTies = enhanced.groupBy(_.value).
+                    map{ case (value, v) => (value, v.map(_.rank.toDouble).sum / v.map(_.rank).size.toDouble)}
+        val joined = for {
+            e <- enhanced
+            a <- avgTies
+            if (e.value == a._1)
+        } yield (e.index,a._2)
+
+        joined.sortBy(_._1).map(_._2.toInt)
+    }    
+
+    /* Wilcoxon Statistic, also named U */
+    def wmwStat(s0: Row, s1: Row): Int = {
+        val NTar = s1.size
+        val ranks = rankAvgTies(s0 ++ s1)
+        val RSum = ranks.takeRight(NTar).sum
+        val U = RSum - NTar*(NTar+1)/2
+        U toInt
+    }
+    
+    /* Estimate P(score_w1 > score_w0) */
+    def smartA(non:Row, tar:Row) = {
+        val den = non.size*tar.size
+        val U = wmwStat(non,tar)
+        val A = U.toDouble/den
+        A
+    }
+
+}
+
+object EvalUtils{
     /*  - Method to get the PAV bins, i.e. the PAV-merged points.
         - Handle kotlin to scala type conversion to hide it from the main PAV class.
     */
@@ -317,10 +390,18 @@ object EvalUtils extends{
     def cost(p: AppParameters, actual: User, pred: User): Double = pred match {
             case Fraudster if actual == Regular => p.Cfa
             case Regular if actual == Fraudster => p.Cmiss
-            case _ => 0.0
+            case _ => 0.0 //TODO: remove that case
     }
 
-    def paramToTheta(p: AppParameters): Double = log(p.p_w1/(1-p.p_w1)*(p.Cmiss/p.Cfa))
+    /*
+        θ = log{p_w1*Cmiss/p_w0*Cfa} = -log{δ}
+    */    
+    def paramToTheta(pa: AppParameters): Double = log(pa.p_w1/(1-pa.p_w1)*(pa.Cmiss/pa.Cfa))
+
+    /*
+        RR = p_w0*Cfa/p_w1*Cmiss
+    */
+    def paramToRiskRatio(p: AppParameters): Double = ((1-p.p_w1)*p.Cfa)/(p.p_w1*p.Cmiss)
 
     /*  Expected Risk using evaluation data at a particular operating point
 
@@ -333,5 +414,38 @@ object EvalUtils extends{
         @return the expected risk
     */        
     def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = 
-            pa.p_w1*operatingPoint._1*pa.Cmiss + (1-pa.p_w1)*operatingPoint._2*pa.Cfa    
+            pa.p_w1*operatingPoint._1*pa.Cmiss + (1-pa.p_w1)*operatingPoint._2*pa.Cfa
+
+    def minusθ(pa: AppParameters) = -1*paramToTheta(pa)
+
+    def affine(y1: Double, x1: Double, x2: Double, slope: Double) = y1 + (x2-x1)*slope
+
+    /* Isocost for a majority classifier.
+        Given application parameters, return two points on the equal-risk line
+        that crosses (d,d) in the ROC space.
+
+        The underlying equation is (tpr-d) = (fpr-d)*rr
+        with rr = p_w0*Cfa / p_w1*Cmiss.
+
+        If the all_w0 classifier has a lower risk, which happens if rr >= 1
+        then the line goes thru (0,0) and the other point is on (a,1), with a
+        determined in code below.
+
+        if the all_w1 has lower risk then its line goes thru (0,a) and (1,1).
+        
+        @Returns a Segment object with Point 1 and Point 2 described above.
+    */
+    def majorityIsocost(pa: AppParameters): To.Segment = {
+        val rr = paramToRiskRatio(pa)
+        if (rr >= 1){
+            val p1 = To.Point(0,0)
+            val p2 = To.Point(1/rr,1)
+            To.Segment(p1,p2)
+        }
+        else {
+            val p1 = To.Point(0,1-rr)
+            val p2 = To.Point(1,1)
+            To.Segment(p1,p2)
+        }
+    }
 }

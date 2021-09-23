@@ -14,3 +14,5 @@ scripts/
 # Executables
 mill
 
+# Macbook
+.DS_Store

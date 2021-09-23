@@ -9,9 +9,9 @@ import scala.util
 import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 
-import decisions._, EvalUtils._, TransactionsData._, AUC._
+import decisions._, EvalUtils._, TransactionsData._, AUC._, To._
 import java.io._
-import decisions.Shared.Validation
+import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._, CollectionsStats._
 
 trait TestHelper {    
     case class Precision(val p:Double)
@@ -25,8 +25,7 @@ trait TestHelper {
         (d1-d2).abs <= threshold
 }
 
-object helper extends decisions.Shared.MathHelp with
-                      decisions.Shared.Validation{
+object helper{
     object ECE{
         val pDevT = Array(0.9, 0.98, 0.85, 0.89, 0.65, 0.64, 0.32, 0.38, 0.30)
         val yDevT = Array(1, 1, 0, 1, 1, 0, 0, 0, 1)
@@ -90,7 +89,7 @@ object helper extends decisions.Shared.MathHelp with
         }
         val fpr = rhsRate(w0Cnt)
         val tpr = rhsRate(w1Cnt)
-        val expected = EvalUtils.Matrix(fpr,tpr)
+        val expected = Matrix(fpr,tpr)
     }
 
     object MinimiseRisk{
@@ -114,18 +113,16 @@ object helper extends decisions.Shared.MathHelp with
             val w0Cnts = histogram(nonS,nbins,min,max).map(_._2).toVector
             val w1Cnts = histogram(tarS,nbins,min,max).map(_._2).toVector
             val histThresh = histogram(tarS,nbins,min,max).map(_._1.toDouble).toVector            
-            val to = Recipes.Evals.Tradeoff(w1Cnts, w0Cnts,histThresh)
+            val to = Tradeoff(w1Cnts, w0Cnts,histThresh)
             val actual = to.minRisk(pa)
 
-            val PP = EvalUtils.Matrix(EvalUtils.Row(pa.p_w1, 1-pa.p_w1))
+            val PP = Matrix(Row(pa.p_w1, 1-pa.p_w1))
             val expected = minRiskBruteForce(PP,to.asPmissPfa,pa.Cfa,pa.Cmiss)
 
             (actual,expected)
         }
 
-        val minRisk = for (dataset <- hiAUCdata) yield score2minrisk(dataset)
-        
-        minRisk.sample(10).foreach{case (actual,expected) => actual ~= expected}
+        val simulate = for (dataset <- hiAUCdata) yield score2minrisk(dataset)
     }
 }
 
@@ -188,14 +185,17 @@ object EvaluationsTests extends TestSuite with TestHelper{ // add EvalUtils as T
 
         test("ROC"){
             val expected = helper.ROC.expected
-            val to = Recipes.Evals.Tradeoff(helper.ROC.w1Cnt,helper.ROC.w0Cnt,helper.ROC.thresh)
+            val to = Tradeoff(helper.ROC.w1Cnt,helper.ROC.w0Cnt,helper.ROC.thresh)
             val actual = to.asROC
-            assert(expected(0).zip(actual(0)).filter{tup => tup._1 ~= tup._2}.size == actual.size)
-            assert(expected(1).zip(actual(1)).filter{tup => tup._1 ~= tup._2}.size == actual.size)
+            assert(expected(0).zip(actual(0)).filter{tup => tup._1 ~= tup._2}.size == actual(0).size)
+            assert(expected(1).zip(actual(1)).filter{tup => tup._1 ~= tup._2}.size == actual(0).size)
         }
 
         test("MinimiseRisk"){
-
+            val numSims = 10
+            val minRisk = helper.MinimiseRisk.simulate
+            val testCases = minRisk.sample(numSims)
+            testCases.foreach{case (actual,expected) => actual ~= expected}
         }
 
         test("CalibrationError"){
@@ -209,4 +209,3 @@ object EvaluationsTests extends TestSuite with TestHelper{ // add EvalUtils as T
         }
     }
 }
-

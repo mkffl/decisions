@@ -26,3 +26,4 @@ object Decisions extends ScalaModule{
     def testFrameworks = Seq("utest.runner.Framework")
   }
 }
+
