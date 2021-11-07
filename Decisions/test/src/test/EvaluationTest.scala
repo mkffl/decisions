@@ -9,8 +9,8 @@ import scala.util
 import com.github.sanity.pav.PairAdjacentViolators._
 import com.github.sanity.pav._
 
-import decisions._, EvalUtils._, TransactionsData._, AUC._, To._
 import java.io._
+import decisions._, EvalUtils._, TransactionsData._, AUC._, To._, Concordance._
 import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._, CollectionsStats._
 
 trait TestHelper {    
@@ -26,6 +26,12 @@ trait TestHelper {
 }
 
 object helper{
+    def sample(data: Row, perc: Double) = {
+        require(0 < perc && perc < 1)
+        val mask = Distribution.bernoulli(perc).sample(data.size)
+        data zip(mask) filter{case (v,m) => m == 1} map(_._1)
+    }
+
     object ECE{
         val pDevT = Array(0.9, 0.98, 0.85, 0.89, 0.65, 0.64, 0.32, 0.38, 0.30)
         val yDevT = Array(1, 1, 0, 1, 1, 0, 0, 0, 1)
@@ -97,7 +103,7 @@ object helper{
             val tarS = data.filter(_.label==1).map(_.s).toVector
             val nonS = data.filter(_.label==0).map(_.s).toVector
             (nonS,tarS)            
-        }
+        }      
 
         val pa = AppParameters(0.5,1,1)
         def hiAUCdata: Distribution[List[Score]] = HighAUC.normalLLR.repeat(50)
@@ -196,6 +202,13 @@ object EvaluationsTests extends TestSuite with TestHelper{ // add EvalUtils as T
             val minRisk = helper.MinimiseRisk.simulate
             val testCases = minRisk.sample(numSims)
             testCases.foreach{case (actual,expected) => actual ~= expected}
+        }
+
+        test("ConcordanceProbability"){
+            val data = helper.MinimiseRisk.hiAUCdata.sample(1)(0)
+            val (non, tar) = helper.MinimiseRisk.splitScores(data)
+
+            assert(naiveA(non,tar) == smartA(non,tar))
         }
 
         test("CalibrationError"){
