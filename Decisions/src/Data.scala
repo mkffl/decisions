@@ -70,9 +70,11 @@ object TransactionsData{
         val mask = Seed.bernoulli(perc).sample(data.size)
         data zip(mask) filter{case (v,m) => m == 1} map(_._1)
     }
+
+    /** Data for the AUC vs Risk analysis. */
     object AUC{
         case class Score(label: Int, s: Double)
-        val p_w1 = 1/2.0
+        val p_w1 = 0.5
         
         def llrw0: Distribution[Double] = for (v <- Seed.normal) yield (v - 2.0)
     
@@ -86,7 +88,7 @@ object TransactionsData{
             llr <- gaussBimodal(mode,loc1,scale1,loc2,scale2)
         } yield llr
 
-    
+        /** Construct the HighAUC Random Variable. */
         object HighAUC{
             val p_mode1 = 0.05
             val (loc1, scale1) = (-2.0, 1.8)
@@ -105,6 +107,7 @@ object TransactionsData{
             } yield Score(label, llr)
         }
     
+        /** Construct the LowAUC Random Variable. */
         object LowAUC{
             val p_mode1 = 0.4
             val (loc1, scale1) = (-2.0, 1.0)
