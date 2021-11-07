@@ -760,7 +760,7 @@ object Recipes extends decisions.Systems{
         val rfTo = makeHisTo(altLoEval, yEval) 
         val manybinsTo = makeHisTo(loEval,yEval,400)        
 
-        /** Simulation to validate Min(E(r)) (Demo13) */ 
+        // Simulation to validate Min(E(r)) (Demo13)
         val cutOff: Double = hisTo.minS(pa)
         val nrows = 1000
         val nsimulations = 500
@@ -809,6 +809,23 @@ object Recipes extends decisions.Systems{
             diff = (hAuc - lAuc)
         } yield diff
 
+        /** Histogram from predictions
+         * 
+         * @param eval the sequence of score predictins and ground truth
+         * @return the Tradeoff object
+         */ 
+        def PAV2Hist(eval: List[Score]): Tradeoff = {
+            val split: List[Tuple2[Double,Int]] = for (obs <- eval) yield (obs.s, obs.label)
+            val (scores,labels) = split.toVector.unzip
+            val pav = new PAV(scores, labels, plodds)
+
+            val w0Cnts = pav.nonTars.map(clipTo1)
+            val w1Cnts = pav.targets.map(clipTo1)
+            val thresh = pav.pavFit.bins.map(_.getX)
+
+            Tradeoff(w1Cnts,w0Cnts,thresh)
+        }        
+
         val aucPa = AppParameters(0.05,107,90)
 
         val hiEval: List[Score] = hiAUCdata.sample(1)(0)
@@ -816,71 +833,8 @@ object Recipes extends decisions.Systems{
         val hiAuc = score2Auc(hiEval)
         val lowAuc = score2Auc(lowEval)
 
-        val hiSplit: List[Tuple2[Double,Int]] = for (obs <- hiEval) yield (obs.s, obs.label)
-        val (hiScores,hiLabels) = hiSplit.toVector.unzip
-        val lowSplit: List[Tuple2[Double,Int]] = for (obs <- lowEval) yield (obs.s, obs.label)
-        val (lowScores,lowLabels) = lowSplit.toVector.unzip
-        
-        val hiPav = new PAV(hiScores, hiLabels, plodds)
-        val lowPav = new PAV(lowScores, lowLabels, plodds)
-
-        val w0HiCnts = hiPav.nonTars.map(clipTo1)
-        val w1HiCnts = hiPav.targets.map(clipTo1)
-        val hiThresh = hiPav.pavFit.bins.map(_.getX)
-        
-        val w0LowCnts = lowPav.nonTars.map(clipTo1)
-        val w1LowCnts = lowPav.targets.map(clipTo1)
-        val lowThresh = lowPav.pavFit.bins.map(_.getX)
-
-        val hiTo = Tradeoff(w1HiCnts,w0HiCnts,hiThresh)
-        val lowTo = Tradeoff(w1LowCnts,w0LowCnts,lowThresh)
-
-        println(hiTo.minRisk(aucPa))
-        println(lowTo.minRisk(aucPa))
-
-        var minn = hiEval.map(_.s).min
-        var maxx = hiEval.map(_.s).max
-        val w0HiCntsHist = histogram(hiEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val w1HiCntsHist = histogram(hiEval.filter(_.label==1).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val hiHistThresh =   histogram(hiEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._1.toDouble).toVector
-        val hiHisTo = Tradeoff(w1HiCntsHist,w0HiCntsHist,hiHistThresh)
-
-        minn = lowEval.map(_.s).min
-        maxx = lowEval.map(_.s).max
-        val w0LowCntsHist = histogram(lowEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val w1LowCntsHist = histogram(lowEval.filter(_.label==1).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val lowHistThresh =  histogram(lowEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._1.toDouble).toVector
-        val lowHisTo = Tradeoff(w1LowCntsHist,w0LowCntsHist,lowHistThresh)
-
-        /* Unit test - TODO: move to unit test file
-        */
-        def sample(data: Row, perc: Double) = {
-            require(0 < perc && perc < 1)
-            val mask = Distribution.bernoulli(perc).sample(data.size)
-            data zip(mask) filter{case (v,m) => m == 1} map(_._1)
-        }
-        
-        val (tarTiny, nonTiny) = (sample(tarPreds,0.02), sample(nonPreds,0.02))
-        
-        assert(naiveA(nonTiny,tarTiny) == smartA(nonTiny,tarTiny)) // true
-        
-        println(smartA(nonPreds,tarPreds))
-
-        // TODO: move to unit test
-        val PP = Matrix(Row(pa.p_w1,1-pa.p_w1))
-        //assert(pavDist.minRisk(pa)==expectedRisks(PP, pavDist.asPmissPfa, pa.Cfa, pa.Cmiss)) // compare with a manual computation of all risks using PP @ PmissPfa        
-
-        // What should I do with this?
-
-        // More profit when works, less costly when missed
-        // This application equivalent to Cmiss = 107, Cfa = 90
-        val C00 = -40
-        val C01 = 157
-        val C10 = 50
-        val C11  = 50
-                
-        def costToMinθ(C00: Double,C01: Double,C10: Double,C11: Double,p_w1: Double =0.05) = 
-            minusθ(decisions.AppParameters(p_w1,C01-C11,C10-C00))        
+        val hiTo = PAV2Hist(hiEval)
+        val lowTo = PAV2Hist(lowEval)
     }
 }
 
