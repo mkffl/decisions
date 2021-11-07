@@ -25,187 +25,14 @@ import TransactionsData._, AUC._
 import SmileKitLearn._, SmileFrame._
 import Dataset._
 
-
-
-/* A full run from data generation to APE-based comparisons
-** and risk validation using simulations.
-*/
-
-/*
-object CompareSystems extends decisions.Shared.LinAlg 
-                        with decisions.Shared.MathHelp
-                        with decisions.Shared.FileIO
-                        with decisions.Systems
-                        with decisions.Shared.Validation{
-    import CollectionsStats._
-
-    implicit def floatToDoubleRow(values: Row): Seq[Double] = values.toSeq
-
-    case class APE(
-        val recognizer: String,
-        val calibrator: String,
-        val priorLogOdds: Vector[Double],
-        val observedDCF: Vector[Double],
-        val minDCF: Vector[Double],
-        val EER: Double,
-        val majorityDCF: Vector[Double]
-    )
-
-    def plotAPE(data: APE): Unit = data match {
-        case APE(recognizer,
-        calibrator,
-        plo,
-        observedDCF,
-        minDCF,
-        eer,
-        majorityDCF) => {          
-        val observedDCFTrace = Scatter(
-            plo,
-            observedDCF,
-            name = "Observed DCF",
-            mode = ScatterMode(ScatterMode.Lines)
-        )
-        val minDCFTrace = Scatter(
-            plo,
-            minDCF,
-            name = "minimum DCF",
-            mode = ScatterMode(ScatterMode.Lines)
-        )
-        val EERTrace = Scatter(
-            plo,
-            for (it <- 1 to plo.size) yield eer,
-            name = "EER",
-            mode = ScatterMode(ScatterMode.Lines)
-        )
-        val majorityTrace = Scatter(
-            plo,
-            majorityDCF,
-            name = "Majority Classifier DCF",
-            mode = ScatterMode(ScatterMode.Lines)  
-        )
-        val layout = Layout(
-            title="APE",
-            yaxis = Axis(
-                range = (0.0, 0.2),
-                title = "Error Probability")
-        )
-        val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
-
-        Plotly.plot(s"$plotlyRootP/ape.html", data, layout)
-        }
-    }
-
-
-    def prepReliabilityPlot(lo: Array[Double],
-                        y: Array[Int]
-    ): Tuple2[Array[Double], Array[Double]] = {
-        val p = lo.map(logistic)
-        val binValue = binnedAccuracy(p, y, binBy0_10)
-        val frequency = binValue.map(_.frequency)
-        val accuracy = binValue.map(_.accuracy)
-        (frequency.toArray, accuracy.toArray)
-    }
-
-    def plotReliability(lo1: Array[Double],
-                        y1: Array[Int],
-                        lo2: Array[Double],
-                        y2: Array[Int]
-    ) = {
-        val (frequency1, accuracy1) = prepReliabilityPlot(lo1, y1)
-        val (frequency2, accuracy2) = prepReliabilityPlot(lo2, y2)
-        val frequencyPerfect = (0 to 100 by 5).toVector.map(_ / 100.0)
-        val accuracyPerfect = frequencyPerfect
-
-        val trace1 = Scatter(
-            frequency1.toVector,
-            accuracy1.toVector,
-            name = "Not Calibrated",
-        )
-        val trace2 = Scatter(
-            frequency2.toVector,
-            accuracy2.toVector,
-            name = "Calibrated"
-        )
-
-        val tracePerfect = Scatter(
-            frequencyPerfect,
-            accuracyPerfect,
-            name = "Perfect Calibration",
-            line = Line(dash = Dash.Dot)
-        )
-
-        val data = Seq(trace1, trace2, tracePerfect)
-        val layout = Layout(
-            title="Reliability plot",
-            yaxis=Axis(title = "Accuracy"),
-            xaxis=Axis(title = "Frequency")
-        )
-
-        Plotly.plot(s"$plotlyRootP/reliability.html", data, layout)
-        //Plotly.plot("reliability.html", data, layout)
-    }
-
-    
-
-    
-    ** y <-> ground truth
-    ** x <-> predictors
-    ** p <-> predicted probabilities (calibrated or not)
-    ** lo <-> log-odds (calibrated or not)
-    ** Hence loEvalCal refers to the calibrated log-odds predictions on the evaluation data
-    ** TODO: check why the calibrated scores don't show improvements vs uncalibrated
-    */
-    /*
-
-    class Estimator(val spec: System){
-        import Estimator._
-        // Expose eval for audit purposes
-        def getyEval = yEval
-        def getxEval = xEval
-        def getPrevalence = p_w1
-        // Fit and apply the recognizer
-        val recognizer = getRecognizer(spec._1, trainDF)
-        val pDev = xDev.map(recognizer)
-        val pEvalUncal = xEval.map(recognizer)
-        // Fit and apply the calibrator
-        val calibrator = getCalibrator(spec._2, pDev, yDev)
-        val loEvalCal = pEvalUncal.map(calibrator).map(logit)
-        // Evaluate the system
-        val steppy = new SteppyCurve(loEvalCal.toVector, yEval, plodds)
-        val pav = new PAV(loEvalCal.toVector, yEval, plodds)
-        // Plot the results
-        def getAPE: APE = APE(getName(spec._1),
-            getName(spec._2),
-            plodds,
-            steppy.bayesErrorRate,
-            pav.bayesErrorRate,
-            pav.EER,
-            steppy.majorityErrorRate
-        )
-        // Expose models
-        def pCalibrated:(Array[Double] => Double) = recognizer andThen calibrator
-        def loCalibrated:(Array[Double] => Double) = pCalibrated andThen logit
-        def hardCalibrated(theta: Double):(Array[Double] => User) = {
-            val thresholder: (Double => User) = lo => if (lo > -1*theta) {Fraudster} else {Regular}
-            loCalibrated andThen thresholder        
-        }
-    }
-
-    object Estimator{
-        // Instantiate the data shared across estimators
-
-
-        // Methods used during evaluation
-        
-    }
-*/
-
+/** Group all analyses and charts. */
 object Recipes extends decisions.Systems{
+    /** Instantiate data and related methods for the fraud use case. */
     object Data{
         val p_w1 = 0.3
-        val trainData: Seq[Transaction] = transact(p_w1).sample(1_000) // Base value is 1_000
-        val devData: Seq[Transaction] = transact(p_w1).sample(100_000) // Base value is 100_000
-        val evalData: Seq[Transaction] = transact(p_w1).sample(5_000) // Base value is 20_000
+        val trainData: Seq[Transaction] = transact(p_w1).sample(1_000)
+        val devData: Seq[Transaction] = transact(p_w1).sample(100_000)
+        val evalData: Seq[Transaction] = transact(p_w1).sample(5_000)
         val trainSchema = DataTypes.struct(
                 new StructField("label", DataTypes.IntegerType),
                 new StructField("f1", DataTypes.DoubleType),
@@ -234,6 +61,8 @@ object Recipes extends decisions.Systems{
         val yEval = evalData.map(extractUser).toVector
         val plodds: Vector[Double] = (BigDecimal(-5.0) to BigDecimal(5.0) by 0.25).map(_.toDouble).toVector        
     }
+
+    /** Helper methods to fit recognizers and calibrators. */
     object FitSystems{
         val formula = Formula.lhs("label")
 
@@ -264,8 +93,9 @@ object Recipes extends decisions.Systems{
     }
 
 
-    // Plotly recipes
+    /** Plotly methods used by Demo{xy} objects to generate charts. */
     object Plots{
+        /** Construct an Annotation for up to 4 chart locations. */
         def annotate(x: Double,
                 y: Double,
                 xref: Int,
@@ -288,9 +118,7 @@ object Recipes extends decisions.Systems{
                 withText(text).
                 withShowarrow(showarrow)
 
-            //xref = xref match {case 1 => }
-        //)
-
+        /** Construct a Line with the default style arguments used for the blog charts. */
         def lineShape(x0: Double,
                     y0: Double,
                     x1: Double,
@@ -311,6 +139,7 @@ object Recipes extends decisions.Systems{
                 line=Some(Line(color=Color.RGBA(c(0), c(1), c(2), c(3)), width = 1.0,dash=Dash.Dot))
         )
 
+        /** Construct a Rectange shape with the default style arguments used for the blog charts. */
         def rectangleShape(x0: Double,
                     y0: Double,
                     x1: Double,
@@ -338,12 +167,14 @@ object Recipes extends decisions.Systems{
             Color.RGBA(70, 80, 220, 0.9),
         )
 
+        /** Class Conditional Distribution for one recogniser. */
         def plotCCD(w0pdf: Row,
                     w1pdf: Row,
                     thresholds: Row, 
                     vlines: Option[Seq[Segment]],
                     fName: String,
-                    featName: String = "s"
+                    featName: String = "s",
+                    barWidth: Double = 0.14
         ) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
                 withName(s"p($featName|ω0)"). 
@@ -352,7 +183,7 @@ object Recipes extends decisions.Systems{
                     withColor(Color.RGB(124, 135, 146)).
                     withOpacity(0.5)
                 ).
-                withWidth(0.25)
+                withWidth(barWidth)
     
             val ccdW1Trace = Bar(thresholds, w1pdf).
                 withName(s"p($featName|ω1)"). 
@@ -361,7 +192,7 @@ object Recipes extends decisions.Systems{
                     withColor(Color.RGB(6, 68, 91)).
                     withOpacity(0.8)
                 ).
-                withWidth(0.25)
+                withWidth(barWidth)
                 
             val traces = Seq(ccdW0Trace,ccdW1Trace)
             
@@ -378,6 +209,7 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-ccd.html", traces, layout)
         }
 
+        /** CCD, Log-likelihood ratio and E(risk) for one recogniser. */
         def plotCCD_LLR_E_r(w0pdf: Row,
                     w1pdf: Row, 
                     llr: Row, 
@@ -452,8 +284,15 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-bayesdecisions1.html", traces, layout)
         }
 
-        def plotUnivarHist(observed: Row, title: String, xtitle: String, vlines: Option[Seq[Segment]], confidence: Option[Segment], annotations: Option[Seq[Annotation]], fName: String) = {
-
+        /** Histogram for one dimensional data */
+        def plotUnivarHist(observed: Row, 
+            title: String, 
+            xtitle: String, 
+            vlines: Option[Seq[Segment]], 
+            confidence: Option[Segment], 
+            annotations: Option[Seq[Annotation]], 
+            fName: String
+        ) = {
             val conf: Option[Seq[Shape]] = confidence.map{case Segment(Point(x0,y0),Point(x1,y1)) => Seq(rectangleShape(x0,y0,x1,y1))}
 
             val lin: Option[Seq[Shape]] = vlines.map(xs => xs.map{case Segment(Point(x0,y0),Point(x1,y1)) => lineShape(x0,y0,x1,y1)})
@@ -475,6 +314,7 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-simulation.html", Seq(trace), layout)
         }
 
+        /** CCD, LLR and ROC curve for one recogniser. */
         def plotCCD_LLR_ROC(w0pdf: Row,
                     w1pdf: Row, 
                     llr: Row, 
@@ -484,6 +324,7 @@ object Recipes extends decisions.Systems{
                     cutLine: Segment,
                     thetaLine: Segment,
                     rocLine: Segment, 
+                    annotations: Option[Seq[Annotation]],                    
                     fName: String
         ) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
@@ -538,11 +379,13 @@ object Recipes extends decisions.Systems{
                     withYaxis2(Axis(anchor=AxisAnchor.Reference(AxisReference.X2),domain=(0.33, 0.65),title="log-likelihood ratio")).
                     withXaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.Y3),domain=(0, 1),range=(-0.05,0.6),title="False Positive Rate")).
                     withYaxis3(Axis(anchor=AxisAnchor.Reference(AxisReference.X3),domain=(0, 0.32),range=(0,1.05),title="True Positive Rate")).
+                    withAnnotations(annotations).
                     withShapes(shapes)
 
             Plotly.plot(s"$plotlyRootP/$fName-bayesdecisions2.html", traces, layout)
         }
 
+        /** LLR and ROC curve for one recogniser. */
         def plotLLR_ROC(llr: Row,
                     llrPAV: Row,        
                     fpr: Row,
@@ -593,6 +436,7 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-histVSpav.html", traces, layout)
         }
 
+        /** Side-by-side LLR and ROC curves to compare 2 recognisers. */
         def plotLLR_ROC_4Panes(llrLeft: Row,
                     llrRight: Row,        
                     fprLeft: Row,
@@ -665,6 +509,9 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-llrRoc4panes.html", traces, layout)
         }
 
+        /** ROC curve for multiple overlaid recognisers. 
+         *  Can plot isocosts to compare recognisers and determine any outperformer.
+        */
         def plotROC(fpr: Seq[Row],
                     tpr: Seq[Row],
                     thresholds: Seq[Row],
@@ -685,28 +532,32 @@ object Recipes extends decisions.Systems{
             val shapes = lines.map(l => l.map{case Segment(Point(x0,y0), Point(x1,y1)) => lineShape(x0,y0,x1,y1,"x1","y1")})
 
             val layout =  Layout().
-                    withTitle("High AUC (Left) vs Low AUC (Right)").
+                    withTitle("ROC curves compared.").
                     withWidth(800).
                     withHeight(800).
                     withLegend(Legend().withX(0.05).withY(-0.3).withYanchor(Anchor.Bottom).withXanchor(Anchor.Middle)).
                     withXaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.Y1),range=(-0.1,1.1),title="False Positive Rate")).
                     withYaxis(Axis(anchor=AxisAnchor.Reference(AxisReference.X1),range=(-0.1, 1.1),title="True Positive Rate")).
+                    withAnnotations(annotations).
                     withShapes(shapes)
 
             Plotly.plot(s"$plotlyRootP/$fName-ROC-equal-utility.html", traces, layout)
         }
     }
 
-    // Data examples and analyses
+    /** Data examples and analyses for parts 1 and 2 (although name suggests part 1 only). 
+     *  Data objects are often shared between different Demo objects, so the data is defined further down
+     *  and available to all Demos.
+    */
     object Part1{
         import Plots._, Data._, FitSystems._
         object Demo11{
-            def run = plotCCD(hisTo.asCCD(0),hisTo.asCCD(1),hisTo.thresholds,None,"demo11")
+            def run = plotCCD(manybinsTo.asCCD(0),manybinsTo.asCCD(1),manybinsTo.thresholds,None,"demo11")
         }
         object Demo12{
             val vlines = Some(Seq(Segment(Point(rfTo.minS(errorPa),0),Point(rfTo.minS(errorPa),0.15))))
 
-            def run = plotCCD(rfTo.asCCD(0),rfTo.asCCD(1),rfTo.thresholds,vlines,"demo12","x")
+            def run = plotCCD(rfTo.asCCD(0),rfTo.asCCD(1),rfTo.thresholds,vlines,"demo12","x",0.25)
         }
         object Demo13{
             val E_r = hisTo.minRisk(pa)
@@ -720,9 +571,7 @@ object Recipes extends decisions.Systems{
             def run = plotUnivarHist(simRisk,"SVM Expected vs Actual risk","Risk",vlines,interval,commentary,"demo13")
         }
 
-        /* CCD,LLR and E(r) to illustrate that Bayes Decisions
-            depdent on the application parameters.
-        */
+        /** CCD,LLR and E(r) to illustrate that Bayes Decisions depdend on the chosen application parameters. */
         object Demo14{
             val c = hisTo.minS(pa)
             val minθ = minusθ(pa)
@@ -770,11 +619,15 @@ object Recipes extends decisions.Systems{
             }
         }
 
-        /* CCD,LLR and ROC to illustrate isocosts
-        */
+        /** CCD,LLR and ROC to illustrate isocosts. */
         object Demo152{
             val cutLine: Segment = Segment(Point(hisTo.minS(pa),0),Point(hisTo.minS(pa),0.2))
             val thetaLine = Segment(Point(-5,-1*paramToTheta(pa)),Point(+5,-1*paramToTheta(pa)))
+
+            val commentary = Some(Seq(annotate(-1,0.15,1,1,f"s = ${hisTo.minS(pa)}%.2f"),
+                            annotate(-1.2,-2.0,2,2,f"-θ = ${minusθ(pa)}%.1f",false),
+                            annotate(0.1,0.8,3,3,f"slope = exp(-θ) = ${exp(minusθ(pa))}%.1f",false)
+            ))
 
             def run = plotCCD_LLR_ROC(hisTo.asCCD(0),
                         hisTo.asCCD(1),
@@ -785,12 +638,13 @@ object Recipes extends decisions.Systems{
                         cutLine,
                         thetaLine,
                         hisTo.isocost(pa),
+                        commentary,
                         "demo15"
             )
         }
-        /* LLR and ROC for steppy and convex hull to illustrate
-           the optimal operating points and its relationship with monotonicity
-        */
+        /** LLR and ROC for steppy and convex hull to illustrate
+         * the optimal operating points and its relationship with monotonicity.
+         */
         object Demo16{
             def run = plotLLR_ROC(manybinsTo.asLLR,
                 pavTo.asLLR,
@@ -807,7 +661,7 @@ object Recipes extends decisions.Systems{
         object Demo17{
             
             def run: Unit = {
-                // P(hiAuc > lowAuc)
+                // P(hiAuc > lowAuc) - uncomment to run (takes for ever on my small machine).
                 /*
                 val p = simAUC.pr(_ > 0)
                 val α = 0.05
@@ -845,11 +699,11 @@ object Recipes extends decisions.Systems{
 
         object Demo18{ 
             def run: Unit = {
+                val aucPaSteeper = AppParameters(0.05,107,190)
+
                 val lines = Seq(
                     majorityIsocost(aucPa),
-                    majorityIsocost(AppParameters(0.05,107,190))
-                    //hiTo.isocost(AppParameters(0.5,5,250)),
-                    //hiTo.isocost(aucPa)
+                    majorityIsocost(aucPaSteeper)
                 )
 
                 val fpr = Seq(hiTo.asROC, lowTo.asROC).map{case Vector(fpr,tpr) => fpr}
@@ -857,73 +711,62 @@ object Recipes extends decisions.Systems{
                 val thresholds = Seq(hiTo, lowTo).map{case Tradeoff(w1cnt,w0cnt,thresh) => thresh}
                 val titles = Seq("High AUC model", "Low AUC model")
 
+                val commentary = Some(Seq(annotate(0.8/exp(minusθ(aucPa)),0.8,1,1,f"slope = ${exp(minusθ(aucPa))}%.1f",true),
+                                        annotate(1.0/exp(minusθ(aucPaSteeper)),1.0,1,1,f"slope = ${exp(minusθ(aucPaSteeper))}%.1f",true)
+                ))
+
                 plotROC(
                     fpr,
                     tpr,
                     thresholds,
                     titles,
-                    None,
+                    commentary,
                     Some(lines),
                     "Demo18"
                 )
             }            
         }
         
-        // Get train data, assuming balanced labels
+        /** Create the data
+          * Base model is an SVM, used throughout parts 1 and 2.
+          * Alternative model is random forest - non-gaussian distributions make it visually interesting.
+          */
+
+        // Get train data, assuming balanced labels (p_w1=0.5)
         val pa = AppParameters(p_w1=0.5,Cmiss=25,Cfa=5)
         val errorPa = AppParameters(p_w1=0.5,1,1)
         val trainData: Seq[Transaction] = transact(pa.p_w1).sample(1_000)
         val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
 
-        // Fit an SVM recognizer
-        val baseModel: Recognizer = SupportVectorMachine("svm", None)//RF("rf", None)
+        // Fit recognizers
+        val baseModel: Recognizer = SupportVectorMachine("svm", None)
         val recognizer = getRecognizer(baseModel, trainDF)
         
         val altModel: Recognizer = RF("rf", None)
         val altRecognizer = getRecognizer(altModel, trainDF)
 
         // Transform predictions (logit transform) to have scores on ]-inf, +inf[
-        // Evaluate CCD on Eval (no dev used) -- Bonus: kernel density
-        // Demo11
+        // Evaluate CCD on Eval (no dev used)
         val loEval = xEval map(recognizer) map(logit) toVector
         val tarPreds = loEval zip yEval filter{case (lo,y) => y == 1} map {_._1} 
         val nonPreds = loEval zip yEval filter{case (lo,y) => y == 0} map {_._1}
 
         val altLoEval = xEval map(altRecognizer) map(logit) toVector
-        /* Unit test
-        */
-        def sample(data: Row, perc: Double) = {
-            require(0 < perc && perc < 1)
-            val mask = Distribution.bernoulli(perc).sample(data.size)
-            data zip(mask) filter{case (v,m) => m == 1} map(_._1)
-        }
-        
-        val (tarTiny, nonTiny) = (sample(tarPreds,0.02), sample(nonPreds,0.02))
-        
-        assert(naiveA(nonTiny,tarTiny) == smartA(nonTiny,tarTiny)) // true
-        
-        println(smartA(nonPreds,tarPreds))
 
-        // TODO: Check that U is to test that A = 0.5
-        // If so then it's practically useless?
-        // check if I can use the estimated variance to compare A1 and A2 for 2 models
+        // Histograms
+        // rfTo used in Demo12 to get skewed-shaped CCD
+        // manybinsTo used in demo11 to get thin-sized bins, also used in Demo16 as a segway into PAV
+        val hisTo = makeHisTo(loEval,yEval,numBins=30)
+        val rfTo = makeHisTo(altLoEval, yEval) 
+        val manybinsTo = makeHisTo(loEval,yEval,400)        
 
-        /* Bayes Decision Rules
-        Plot CCD,LLR and ROC for histogram bins with 2000 points
-        - 20 bins for a smooth approximation 
-        - Then 100 bins to have a concavity, a segway into PAV
-        - PAV counts with 20 bins overlayed with 100 bins histogram, LLR and ROC with isocosts to show the link with risk-based decisions
-        */
-        // Convert score vectors to histogram counts
-        val hisTo = makeHisTo(loEval,yEval)
-
-        // RF for Bayes decision plot
-        val rfTo = makeHisTo(altLoEval, yEval)
-
-        // TODO: apply the classifier approach to the estimators
-        // Min(E(r)) validation
+        // Simulation to validate Min(E(r)) (Demo13)
         val cutOff: Double = hisTo.minS(pa)
+        val nrows = 1000
+        val nsimulations = 500
+        
         val thresholder: (Double => User) = score => if (score > cutOff) {Fraudster} else {Regular}
+
         def classifier:(Array[Double] => User) = recognizer andThen logit andThen thresholder
 
         def simulateTransact: Distribution[Double] = for {
@@ -932,32 +775,17 @@ object Recipes extends decisions.Systems{
             risk = cost(pa, transaction.UserType, prediction)
         } yield risk
 
-        val nrows = 1000
-        val nsimulations = 500
-
         val simData: Distribution[Double] = simulateTransact.repeat(nrows).map(_.sum.toDouble / nrows)
         val simRisk: Row = simData.sample(nsimulations).toVector
 
-        val nBins = 400
-        val manybinsTo = makeHisTo(loEval,yEval,400)
-
-        // Fit pav on Eval and plot LLR (line chart)
-        // Demo12
+        // Fit pav on Eval and plot LLR (Demo16)
         val pav = new PAV(loEval, yEval, plodds)
-        // TODO: REMOVE THIS METHOD
-        //val (scores, llr) = pav.scoreVSlogodds // scores <-> pavLoEval 
-
-        // PAV
         val w0PavCounts = pav.nonTars
         val w1PavCounts = pav.targets
         val pavThresh: Row = pav.pavFit.bins.map(_.getX)
-        val pavTo = Tradeoff(w1PavCounts,w0PavCounts,pavThresh)
+        val pavTo: Tradeoff = Tradeoff(w1PavCounts,w0PavCounts,pavThresh)
 
-        val PP = Matrix(Row(pa.p_w1,1-pa.p_w1))
-        //assert(pavDist.minRisk(pa)==expectedRisks(PP, pavDist.asPmissPfa, pa.Cfa, pa.Cmiss)) // compare with a manual computation of all risks using PP @ PmissPfa
-
-        // AUC and Risk
-
+        // AUC and Risk use case (Demo17 and Demo18)
         def splitScores(data: List[Score]): Tuple2[Row,Row] = {
             val tarS = data.filter(_.label==1).map(_.s).toVector
             val nonS = data.filter(_.label==0).map(_.s).toVector
@@ -968,7 +796,9 @@ object Recipes extends decisions.Systems{
             val (nonS,tarS) = splitScores(data)
             smartA(nonS,tarS)            
         }
+        
         def hiAUCdata: Distribution[List[Score]] = HighAUC.normalLLR.repeat(1000)
+
         def lowAUCdata: Distribution[List[Score]] = LowAUC.normalLLR.repeat(1000)
 
         def simAUC: Distribution[Double] = for {
@@ -979,61 +809,32 @@ object Recipes extends decisions.Systems{
             diff = (hAuc - lAuc)
         } yield diff
 
+        /** Histogram from predictions
+         * 
+         * @param eval the sequence of score predictins and ground truth
+         * @return the Tradeoff object
+         */ 
+        def PAV2Hist(eval: List[Score]): Tradeoff = {
+            val split: List[Tuple2[Double,Int]] = for (obs <- eval) yield (obs.s, obs.label)
+            val (scores,labels) = split.toVector.unzip
+            val pav = new PAV(scores, labels, plodds)
+
+            val w0Cnts = pav.nonTars.map(clipTo1)
+            val w1Cnts = pav.targets.map(clipTo1)
+            val thresh = pav.pavFit.bins.map(_.getX)
+
+            Tradeoff(w1Cnts,w0Cnts,thresh)
+        }        
+
+        val aucPa = AppParameters(0.05,107,90)
+
         val hiEval: List[Score] = hiAUCdata.sample(1)(0)
         val lowEval: List[Score] = lowAUCdata.sample(1)(0)
-
         val hiAuc = score2Auc(hiEval)
         val lowAuc = score2Auc(lowEval)
 
-        val hiSplit: List[Tuple2[Double,Int]] = for (obs <- hiEval) yield (obs.s, obs.label)
-        val (hiScores,hiLabels) = hiSplit.toVector.unzip
-        val lowSplit: List[Tuple2[Double,Int]] = for (obs <- lowEval) yield (obs.s, obs.label)
-        val (lowScores,lowLabels) = lowSplit.toVector.unzip
-
-        val hiPav = new PAV(hiScores, hiLabels, plodds)
-        val lowPav = new PAV(lowScores, lowLabels, plodds)
-
-        val w0HiCnts = hiPav.nonTars.map(clipTo1)
-        val w1HiCnts = hiPav.targets.map(clipTo1)
-        val hiThresh = hiPav.pavFit.bins.map(_.getX)
-        
-        val w0LowCnts = lowPav.nonTars.map(clipTo1)
-        val w1LowCnts = lowPav.targets.map(clipTo1)
-        val lowThresh = lowPav.pavFit.bins.map(_.getX)        
-
-        def costToMinθ(C00: Double,C01: Double,C10: Double,C11: Double,p_w1: Double =0.05) = 
-            minusθ(decisions.AppParameters(p_w1,C01-C11,C10-C00))
-
-        // More profit when works, less costly when missed
-        val C00 = -40
-        val C01 = 157
-        val C10 = 50
-        val C11  = 50
-        // Application equivalent to Cmiss = 107, Cfa = 90
-
-        //val aucPa = AppParameters(0.5,5,80)
-        val aucPa = AppParameters(0.05,107,90)
-
-        val hiTo = Tradeoff(w1HiCnts,w0HiCnts,hiThresh)
-        val lowTo = Tradeoff(w1LowCnts,w0LowCnts,lowThresh)
-
-        println(hiTo.minRisk(aucPa))
-        println(lowTo.minRisk(aucPa))
-
-        var minn = hiEval.map(_.s).min
-        var maxx = hiEval.map(_.s).max
-        val w0HiCntsHist = histogram(hiEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val w1HiCntsHist = histogram(hiEval.filter(_.label==1).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val hiHistThresh =   histogram(hiEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._1.toDouble).toVector
-        val hiHisTo = Tradeoff(w1HiCntsHist,w0HiCntsHist,hiHistThresh)
-
-        minn = lowEval.map(_.s).min
-        maxx = lowEval.map(_.s).max
-        val w0LowCntsHist = histogram(lowEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val w1LowCntsHist = histogram(lowEval.filter(_.label==1).map(_.s).toVector,30,minn,maxx).map(_._2).toVector
-        val lowHistThresh =  histogram(lowEval.filter(_.label==0).map(_.s).toVector,30,minn,maxx).map(_._1.toDouble).toVector
-        val lowHisTo = Tradeoff(w1LowCntsHist,w0LowCntsHist,lowHistThresh)
-
+        val hiTo = PAV2Hist(hiEval)
+        val lowTo = PAV2Hist(lowEval)
     }
 }
 
@@ -1041,12 +842,12 @@ object Entry{
     import Recipes._, Part1._
     
     def main(args: Array[String]): Unit = {
-        //Demo11.run
-        //Demo12.run
-        //Demo13.run
-        //Demo14.run
-        //Demo15.run
-        //Demo16.run
+        Demo11.run
+        Demo12.run
+        Demo13.run
+        Demo14.run
+        Demo152.run
+        Demo16.run
         Demo17.run
         Demo18.run
   }
