@@ -622,7 +622,7 @@ object Recipes extends decisions.Systems{
         /** CCD,LLR and ROC to illustrate isocosts. */
         object Demo152{
             val cutLine: Segment = Segment(Point(hisTo.minS(pa),0),Point(hisTo.minS(pa),0.2))
-            val thetaLine = Segment(Point(-5,-1*paramToTheta(pa)),Point(+5,-1*paramToTheta(pa)))
+            val thetaLine = Segment(Point(-5,-1*paramToθ(pa)),Point(+5,-1*paramToθ(pa)))
 
             val commentary = Some(Seq(annotate(-1,0.15,1,1,f"s = ${hisTo.minS(pa)}%.2f"),
                             annotate(-1.2,-2.0,2,2,f"-θ = ${minusθ(pa)}%.1f",false),

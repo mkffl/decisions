@@ -396,7 +396,7 @@ object EvalUtils{
     /*
         θ = log{p_w1*Cmiss/p_w0*Cfa} = -log{δ}
     */    
-    def paramToTheta(pa: AppParameters): Double = log(pa.p_w1/(1-pa.p_w1)*(pa.Cmiss/pa.Cfa))
+    def paramToθ(pa: AppParameters): Double = log(pa.p_w1/(1-pa.p_w1)*(pa.Cmiss/pa.Cfa))
 
     /*
         RR = p_w0*Cfa/p_w1*Cmiss
@@ -416,7 +416,7 @@ object EvalUtils{
     def paramToRisk(pa: AppParameters)(operatingPoint: Tuple2[Double,Double]): Double = 
             pa.p_w1*operatingPoint._1*pa.Cmiss + (1-pa.p_w1)*operatingPoint._2*pa.Cfa
 
-    def minusθ(pa: AppParameters) = -1*paramToTheta(pa)
+    def minusθ(pa: AppParameters) = -1*paramToθ(pa)
 
     def affine(y1: Double, x1: Double, x2: Double, slope: Double) = y1 + (x2-x1)*slope
 
