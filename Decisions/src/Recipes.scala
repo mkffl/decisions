@@ -543,6 +543,56 @@ object Recipes extends decisions.Systems{
 
             Plotly.plot(s"$plotlyRootP/$fName-ROC-equal-utility.html", traces, layout)
         }
+
+        def plotAPE(recognizer: String,
+            plo: Row,
+            observedDCF: Row,
+            minDCF: Row,
+            eer: Double,
+            majorityDCF: Row,
+            fName: String
+        ): Unit = {
+
+            val observedDCFTrace = Scatter(
+                plo,
+                observedDCF,
+                name = "Observed DCF",
+                mode = ScatterMode(ScatterMode.Lines)
+            )
+
+            val minDCFTrace = Scatter(
+                plo,
+                minDCF,
+                name = "minimum DCF",
+                mode = ScatterMode(ScatterMode.Lines)
+            )
+
+            val EERTrace = Scatter(
+                plo,
+                plo.map(x => eer),
+                name = "EER",
+                mode = ScatterMode(ScatterMode.Lines)
+            )
+
+            val majorityTrace = Scatter(
+                plo,
+                majorityDCF,
+                name = "Majority Classifier DCF",
+                mode = ScatterMode(ScatterMode.Lines)  
+            )
+
+            val layout = Layout(
+                title="APE",
+                yaxis = Axis(
+                    range = (0.0, 0.2),
+                    title = "Error Probability")
+            )
+
+            val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
+
+            Plotly.plot(s"$plotlyRootP/$fName-ape.html", data, layout)
+
+        }
     }
 
     /** Data examples and analyses for parts 1 and 2 (although name suggests part 1 only). 
@@ -726,6 +776,23 @@ object Recipes extends decisions.Systems{
                 )
             }            
         }
+
+        object Demo110{
+            def run: Unit = {
+                val steppy = new SteppyCurve(loEval, yEval, plodds)
+                val pav = new PAV(loEval, yEval, plodds)
+
+                plotAPE(
+                    "svm",
+                    plodds,
+                    steppy.bayesErrorRate,
+                    pav.bayesErrorRate,
+                    pav.EER,
+                    steppy.majorityErrorRate,
+                    "Demo110"
+                )
+            }
+        }        
         
         /** Create the data
           * Base model is an SVM, used throughout parts 1 and 2.
@@ -842,13 +909,14 @@ object Entry{
     import Recipes._, Part1._
     
     def main(args: Array[String]): Unit = {
-        Demo11.run
-        Demo12.run
-        Demo13.run
-        Demo14.run
-        Demo152.run
-        Demo16.run
-        Demo17.run
-        Demo18.run
+        //Demo11.run
+        //Demo12.run
+        //Demo13.run
+        //Demo14.run
+        //Demo152.run
+        //Demo16.run
+        //Demo17.run
+        //Demo18.run
+        Demo110.run
   }
 }
