@@ -544,6 +544,9 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-ROC-equal-utility.html", traces, layout)
         }
 
+        /* Applied Probability of Error plot with all benchmarks
+         * minimum DCF, EER and majority DCF
+        */
         def plotAPE(recognizer: String,
             plo: Row,
             observedDCF: Row,
@@ -553,38 +556,26 @@ object Recipes extends decisions.Systems{
             fName: String
         ): Unit = {
 
-            val observedDCFTrace = Scatter(
-                plo,
-                observedDCF,
-                name = "Observed DCF",
-                mode = ScatterMode(ScatterMode.Lines)
-            )
+            val observedDCFTrace = Scatter(plo, observedDCF).
+                withName("Observed DCF").
+                withMode(ScatterMode(ScatterMode.Lines))
 
-            val minDCFTrace = Scatter(
-                plo,
-                minDCF,
-                name = "minimum DCF",
-                mode = ScatterMode(ScatterMode.Lines)
-            )
+            val minDCFTrace = Scatter(plo, minDCF).
+                withName("minimum DCF").
+                withMode(ScatterMode(ScatterMode.Lines))
 
-            val EERTrace = Scatter(
-                plo,
-                plo.map(x => eer),
-                name = "EER",
-                mode = ScatterMode(ScatterMode.Lines)
-            )
+            val EERTrace = Scatter(plo, plo.map(x => eer)).
+                withName("EER").
+                withMode(ScatterMode(ScatterMode.Lines))
 
-            val majorityTrace = Scatter(
-                plo,
-                majorityDCF,
-                name = "Majority Classifier DCF",
-                mode = ScatterMode(ScatterMode.Lines)  
-            )
+            val majorityTrace = Scatter(plo, majorityDCF).
+                withName("Majority Classifier DCF").
+                withMode(ScatterMode(ScatterMode.Lines))
 
             val layout = Layout(
                 title="APE",
                 yaxis = Axis(
-                    range = (0.0, 0.2),
+                    range = (0.0, 0.5),
                     title = "Error Probability")
             )
 
@@ -593,6 +584,50 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-ape.html", data, layout)
 
         }
+
+        /* APE with two systems and EER as the only benchmark
+        */
+        def plotAPE(
+            system1: String,
+            system2: String,            
+            plo: Row,
+            observedDCF1: Row,
+            observedDCF2: Row,
+            eer1: Double,
+            eer2: Double,
+            fName: String
+        ): Unit = {
+            val observedDCF1Trace = Scatter(plo,observedDCF1).
+                    withName(system1).
+                    withMode(ScatterMode(ScatterMode.Lines))
+
+            val observedDCF2Trace = Scatter(plo,observedDCF2).
+                    withName(system2).
+                    withMode(ScatterMode(ScatterMode.Lines))                
+
+            val eer1Trace = Scatter(plo,plo.map(x => eer1)).
+                    withName("EER System 1").
+                    withMode(ScatterMode(ScatterMode.Lines))
+
+            val eer2Trace = Scatter(plo,plo.map(x => eer2)).
+                    withName("EER System 2").
+                    withMode(ScatterMode(ScatterMode.Lines))
+
+            val data = Seq(
+                observedDCF1Trace,
+                observedDCF2Trace, 
+                EER1Trace,
+                EER2Trace)
+
+            val layout = Layout(
+                title=s"APE ($system1 vs $system2)",
+                yaxis = Axis(
+                    range = (0.0, 0.5),
+                    title = "Error Probability")
+            )                
+
+            Plotly.plot(s"$plotlyRootP/$fName-ape-compared.html", data, layout)                
+        }        
     }
 
     /** Data examples and analyses for parts 1 and 2 (although name suggests part 1 only). 
