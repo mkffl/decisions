@@ -387,6 +387,12 @@ object EvalUtils{
         priorCosts at pMissPfa apply(0) min
     }
 
+    /* Detection Cost Function (DCF)
+
+    @param pa the application's prior probability and cost of miss and false alarm
+    @param actual the ground truth
+    @param pred the predicted value
+    */
     def cost(p: AppParameters, actual: User, pred: User): Double = pred match {
             case Fraudster if actual == Regular => p.Cfa
             case Regular if actual == Fraudster => p.Cmiss
