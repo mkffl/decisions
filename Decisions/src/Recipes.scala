@@ -92,6 +92,48 @@ object Recipes extends decisions.Systems{
         }
     }
 
+    /* Helper methods for DCF estimations
+    */
+    object Simulations{
+        def getThresholder(cutOff: Double)(score: Double): User =
+            if (score > cutOff){Fraudster} 
+            else {Regular}
+
+        /* Generate one dataset of transactions and return the average cost.
+        Example usage:
+        {{
+            val oneDataset = transactionsDCF(
+                1_000,
+                AppParameters(0.5,10,8),
+                transact,
+                rfClassifier,
+                dcf)
+            val allDatasets = oneDataset.sample(50)
+        }}
+
+        @param nrows the number of rows in the simulated dataset
+        @param pa the application type
+        @param transact the random variable of transactions
+        @param system a predictive pipeline that outputs the user type
+        */
+        def transactionsDCF(
+            nrows: Integer,
+            pa: AppParameters,
+            randomVariable: Distribution[Transaction],
+            system: (Array[Double] => User)
+        ): Distribution[Double] = {
+            def simulate = for {
+                    transaction <- randomVariable
+                    prediction = system(transaction.features.toArray)
+                    risk = cost(pa, transaction.UserType, prediction)
+                } yield risk
+
+            simulate.repeat(nrows).map(_.sum.toDouble / nrows)
+        }
+
+
+    }    
+
 
     /** Plotly methods used by Demo{xy} objects to generate charts. */
     object Plots{
@@ -557,27 +599,31 @@ object Recipes extends decisions.Systems{
         ): Unit = {
 
             val observedDCFTrace = Scatter(plo, observedDCF).
-                withName("Observed DCF").
-                withMode(ScatterMode(ScatterMode.Lines))
+                withName("DCF").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
 
             val minDCFTrace = Scatter(plo, minDCF).
-                withName("minimum DCF").
-                withMode(ScatterMode(ScatterMode.Lines))
+                withName("Minimum DCF").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5))
 
             val EERTrace = Scatter(plo, plo.map(x => eer)).
                 withName("EER").
-                withMode(ScatterMode(ScatterMode.Lines))
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5, dash=Dash.Dot))
 
             val majorityTrace = Scatter(plo, majorityDCF).
                 withName("Majority Classifier DCF").
-                withMode(ScatterMode(ScatterMode.Lines))
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5))                
 
-            val layout = Layout(
-                title="APE",
-                yaxis = Axis(
-                    range = (0.0, 0.5),
-                    title = "Error Probability")
-            )
+            val layout = Layout().
+                withTitle("Applied Probability of Error (SVM + logit)").
+                withYaxis(Axis(range=(0.0, 0.2), title="Error Probability")).
+                withXaxis(Axis(range=(-3.0, +3.0), title="Application type (θ)")).
+                withWidth(800).
+                withHeight(800)
 
             val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
 
@@ -587,7 +633,7 @@ object Recipes extends decisions.Systems{
 
         /* APE with two systems and EER as the only benchmark
         */
-        def plotAPE(
+        def plotAPECompare(
             system1: String,
             system2: String,            
             plo: Row,
@@ -599,32 +645,37 @@ object Recipes extends decisions.Systems{
         ): Unit = {
             val observedDCF1Trace = Scatter(plo,observedDCF1).
                     withName(system1).
-                    withMode(ScatterMode(ScatterMode.Lines))
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
 
             val observedDCF2Trace = Scatter(plo,observedDCF2).
                     withName(system2).
-                    withMode(ScatterMode(ScatterMode.Lines))                
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(6, 31, 156, 0.9), width = 2.5))
 
             val eer1Trace = Scatter(plo,plo.map(x => eer1)).
                     withName("EER System 1").
-                    withMode(ScatterMode(ScatterMode.Lines))
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width=1.5, dash=Dash.Dot))
+                    
 
             val eer2Trace = Scatter(plo,plo.map(x => eer2)).
                     withName("EER System 2").
-                    withMode(ScatterMode(ScatterMode.Lines))
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(6, 31, 156, 0.9), width=1.5, dash=Dash.Dot))
 
             val data = Seq(
                 observedDCF1Trace,
                 observedDCF2Trace, 
-                EER1Trace,
-                EER2Trace)
+                eer1Trace,
+                eer2Trace)
 
-            val layout = Layout(
-                title=s"APE ($system1 vs $system2)",
-                yaxis = Axis(
-                    range = (0.0, 0.5),
-                    title = "Error Probability")
-            )                
+            val layout = Layout().
+                withTitle(s"APE graphs for 2 systems").
+                withYaxis(Axis(range=(0.0, 0.2), title="Error Probability")).
+                withXaxis(Axis(range=(-3.0, +3.0), title="Application type (θ)")).
+                withWidth(800).
+                withHeight(800)             
 
             Plotly.plot(s"$plotlyRootP/$fName-ape-compared.html", data, layout)                
         }        
@@ -635,7 +686,7 @@ object Recipes extends decisions.Systems{
      *  and available to all Demos.
     */
     object Part1{
-        import Plots._, Data._, FitSystems._
+        import Plots._, Data._, FitSystems._, Simulations._
         object Demo11{
             def run = plotCCD(manybinsTo.asCCD(0),manybinsTo.asCCD(1),manybinsTo.thresholds,None,"demo11")
         }
@@ -650,10 +701,10 @@ object Recipes extends decisions.Systems{
             val vlines = Some(Seq(Segment(Point(E_r,0),Point(E_r,5))))
             val interval = Some(Segment(Point(simRisk.percentile(5),0.0),Point(simRisk.percentile(95),5)))
 
-            val commentary = Some(Seq(annotate(E_r,2,1,1,f"E(r) = ${E_r}%.1f")
-            ))            
+            val commentary = Some(Seq(annotate(E_r,2,1,1,f"E(r) = ${E_r}%.1f")))
     
             def run = plotUnivarHist(simRisk,"SVM Expected vs Actual risk","Risk",vlines,interval,commentary,"demo13")
+            throw new Exception("How can risk be above 1.0??!! Looks wrong.")
         }
 
         /** CCD,LLR and E(r) to illustrate that Bayes Decisions depdend on the chosen application parameters. */
@@ -827,11 +878,66 @@ object Recipes extends decisions.Systems{
                     "Demo110"
                 )
             }
-        }        
+        }
+
+        object Demo111{
+            def run: Unit = {
+                val steppy1 = new SteppyCurve(loEval, yEval, plodds)
+                val pav1 = new PAV(loEval, yEval, plodds)
+                val steppy2 = new SteppyCurve(altLoEval, yEval, plodds)
+                val pav2 = new PAV(altLoEval, yEval, plodds)
+
+                plotAPECompare("SVM + logit",
+                    "Random Forest + logit",
+                    plodds,
+                    steppy1.bayesErrorRate,
+                    steppy2.bayesErrorRate,
+                    pav1.EER,
+                    pav2.EER,
+                    "Demo111"
+                )
+            }
+        }
+
+        object Demo112{
+            def run: Unit = {
+                
+                val pa2 = AppParameters(0.5, 2.718, 1)
+
+                val steppy1 = new SteppyCurve(loEval, yEval, plodds)
+                val ii = plodds.getClosestIndex(1.0)
+                val E_r1 = steppy1.bayesErrorRate(ii)
+                def bayesThreshold1 = getThresholder(minusθ(pa2))_
+                def system1 = recognizer andThen logit andThen bayesThreshold1
+                
+                val steppy2 = new SteppyCurve(altLoEval, yEval, plodds)
+                val E_r2 = steppy2.bayesErrorRate(ii)
+                def bayesThreshold2 = getThresholder(minusθ(pa2))_
+                def system2 = altRecognizer andThen logit andThen bayesThreshold2
+                
+                val dataset1 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system1)
+                val simulations1 = dataset1.sample(50).toVector
+
+                val vlines = Some(Seq(Segment(Point(E_r1,0),Point(E_r1,5))))
+                val interval = Some(
+                    Segment(Point(simulations1.percentile(5),0.0),
+                            Point(simulations1.percentile(95),5)
+                    )
+                )
+
+                val commentary = Some(Seq(annotate(E_r1,2,1,1,f"E(r) = ${E_r1}%.1f")))
+
+                println(E_r1)
+                println(paramToθ(pa2))
         
+                plotUnivarHist(simulations1,"System 1 Expected vs Actual risk","Risk",vlines,interval,None,"demo112")
+
+            }
+        }
+       
         /** Create the data
           * Base model is an SVM, used throughout parts 1 and 2.
-          * Alternative model is random forest - non-gaussian distributions make it visually interesting.
+          * Alternative model is random forest - non-gaussian CCD make it visually interesting.
           */
 
         // Get train data, assuming balanced labels (p_w1=0.5)
@@ -841,9 +947,11 @@ object Recipes extends decisions.Systems{
         val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
 
         // Fit recognizers
+        // Standard recognizer is based on SVM
         val baseModel: Recognizer = SupportVectorMachine("svm", None)
         val recognizer = getRecognizer(baseModel, trainDF)
         
+        // Alternative recognizer is based on random forests
         val altModel: Recognizer = RF("rf", None)
         val altRecognizer = getRecognizer(altModel, trainDF)
 
@@ -886,6 +994,8 @@ object Recipes extends decisions.Systems{
         val w1PavCounts = pav.targets
         val pavThresh: Row = pav.pavFit.bins.map(_.getX)
         val pavTo: Tradeoff = Tradeoff(w1PavCounts,w0PavCounts,pavThresh)
+
+        // ************* Start AUC
 
         // AUC and Risk use case (Demo17 and Demo18)
         def splitScores(data: List[Score]): Tuple2[Row,Row] = {
@@ -937,6 +1047,8 @@ object Recipes extends decisions.Systems{
 
         val hiTo = PAV2Hist(hiEval)
         val lowTo = PAV2Hist(lowEval)
+
+        // ************* End AUC
     }
 }
 
@@ -952,6 +1064,8 @@ object Entry{
         //Demo16.run
         //Demo17.run
         //Demo18.run
-        Demo110.run
+        // Demo110.run
+        // Demo111.run
+        Demo112.run
   }
 }
