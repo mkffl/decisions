@@ -902,13 +902,16 @@ object Recipes extends decisions.Systems{
         object Demo112{
             def run: Unit = {
                 
-                val pa2 = AppParameters(0.5, 2.718, 1)
+                val pa2 = AppParameters(0.3, 6.342657599737771, 1.0)// AppParameters(0.5, 2.718, 1)
+                def getConstant(pa: AppParameters) = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
+                val cst = getConstant(pa2)                
 
                 val steppy1 = new SteppyCurve(loEval, yEval, plodds)
                 val ii = plodds.getClosestIndex(1.0)
                 val E_r1 = steppy1.bayesErrorRate(ii)
-                def bayesThreshold1 = getThresholder(minusθ(pa2))_
-                def system1 = recognizer andThen logit andThen bayesThreshold1
+                val cutOff: Double = minusθ(pa2)
+                def bayesThreshold1: Double => User = getThresholder(cutOff)_
+                def system1: Array[Double] => User = recognizer andThen logit andThen bayesThreshold1
                 
                 val steppy2 = new SteppyCurve(altLoEval, yEval, plodds)
                 val E_r2 = steppy2.bayesErrorRate(ii)
@@ -916,7 +919,7 @@ object Recipes extends decisions.Systems{
                 def system2 = altRecognizer andThen logit andThen bayesThreshold2
                 
                 val dataset1 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system1)
-                val simulations1 = dataset1.sample(50).toVector
+                val simulations1 = dataset1.sample(50).map(_ / cst).toVector
 
                 val vlines = Some(Seq(Segment(Point(E_r1,0),Point(E_r1,5))))
                 val interval = Some(
@@ -932,6 +935,19 @@ object Recipes extends decisions.Systems{
         
                 plotUnivarHist(simulations1,"System 1 Expected vs Actual risk","Risk",vlines,interval,None,"demo112")
 
+                // DEBUG
+
+                val preds = xEval map(system1)
+                val actuals = yEval.map{case 1 => Fraudster case _ => Regular}
+                val dcfs =  actuals zip(preds) map{case(a,p) => cost(pa2,a,p)}
+                println(cst)
+                val nrows = dcfs.size
+                val E_r1_check = dcfs.sum / dcfs.size.toDouble
+                val E_er1_check = (dcfs.sum / dcfs.size.toDouble)/cst
+                println(nrows)
+                println(E_r1_check)
+                println(E_er1_check)
+                //println(dcfs.map(_.sum.toDouble / nrows))
             }
         }
        
