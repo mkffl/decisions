@@ -216,7 +216,7 @@ object Recipes extends decisions.Systems{
                     vlines: Option[Seq[Segment]],
                     fName: String,
                     featName: String = "s",
-                    barWidth: Double = 0.14
+                    barWidth: Double = 0.14,
         ) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
                 withName(s"p($featName|ω0)"). 
@@ -344,7 +344,7 @@ object Recipes extends decisions.Systems{
                 l <- lin
             } yield c ++ l
  
-            val trace = Histogram(observed, name=title, histnorm = HistNorm.ProbabilityDensity)
+            val trace = Histogram(observed, name=title, histnorm=HistNorm.ProbabilityDensity)
 
             val layout = Layout().
                     withTitle(title).
@@ -678,7 +678,37 @@ object Recipes extends decisions.Systems{
                 withHeight(800)             
 
             Plotly.plot(s"$plotlyRootP/$fName-ape-compared.html", data, layout)                
-        }        
+        }
+
+        /** Two unidimensional histograms */
+        def plotTwoUnivarHists(observations1: Row,
+            observations2: Row,
+            title: String,
+            xtitle: String, 
+            //vlines: Option[Seq[Segment]], 
+            //confidence: Option[Segment], 
+            //annotations: Option[Seq[Annotation]], 
+            fName: String
+        ) = {
+            val trace1 = Histogram(observations1).
+                withHistnorm(HistNorm.ProbabilityDensity).
+                withName(title).
+                withXbins(Bins(0.0,0.3,0.02))
+
+            val trace2 = Histogram(observations2).
+                withName(title).
+                withHistnorm(HistNorm.ProbabilityDensity).
+                withXbins(Bins(0.0,0.3,0.01))
+
+            val layout = Layout().
+                    withTitle(title).
+                    withXaxis(Axis(range=(0.0,0.3),title=xtitle)).
+                    withYaxis(Axis(title="Frequency"))
+
+
+            Plotly.plot(s"$plotlyRootP/$fName-2-histograms.html", Seq(trace1, trace2), layout)
+        }
+
     }
 
     /** Data examples and analyses for parts 1 and 2 (although name suggests part 1 only). 
@@ -902,12 +932,13 @@ object Recipes extends decisions.Systems{
         object Demo112{
             def run: Unit = {
                 
-                val pa2 = AppParameters(0.3, 6.342657599737771, 1.0)// AppParameters(0.5, 2.718, 1)
+                val pa2 = AppParameters(0.01, 36.42006467597279, 1.0)
+                val targetTheta = -1.0
                 def getConstant(pa: AppParameters) = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
                 val cst = getConstant(pa2)                
 
                 val steppy1 = new SteppyCurve(loEval, yEval, plodds)
-                val ii = plodds.getClosestIndex(1.0)
+                val ii = plodds.getClosestIndex(targetTheta)
                 val E_r1 = steppy1.bayesErrorRate(ii)
                 val cutOff: Double = minusθ(pa2)
                 def bayesThreshold1: Double => User = getThresholder(cutOff)_
@@ -919,7 +950,7 @@ object Recipes extends decisions.Systems{
                 def system2 = altRecognizer andThen logit andThen bayesThreshold2
                 
                 val dataset1 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system1)
-                val simulations1 = dataset1.sample(50).map(_ / cst).toVector
+                val simulations1 = dataset1.sample(800).map(_ / cst).toVector
 
                 val vlines = Some(Seq(Segment(Point(E_r1,0),Point(E_r1,5))))
                 val interval = Some(
@@ -927,16 +958,30 @@ object Recipes extends decisions.Systems{
                             Point(simulations1.percentile(95),5)
                     )
                 )
-
                 val commentary = Some(Seq(annotate(E_r1,2,1,1,f"E(r) = ${E_r1}%.1f")))
-
                 println(E_r1)
                 println(paramToθ(pa2))
-        
-                plotUnivarHist(simulations1,"System 1 Expected vs Actual risk","Risk",vlines,interval,None,"demo112")
+                //plotUnivarHist(simulations1,"System 1 Expected vs Actual risk","Risk",vlines,interval,None,"demo112-system1")
 
-                // DEBUG
+                val dataset2 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system2)
+                val simulations2 = dataset2.sample(800).map(_ / cst).toVector
+                val interval2 = Some(
+                    Segment(Point(simulations2.percentile(5),0.0),
+                            Point(simulations2.percentile(95),5)
+                    )
+                )
+                //plotUnivarHist(simulations2,"System 2 Expected vs Actual risk","Risk",vlines,interval2,None,"demo112-system2")
 
+                //plotTwoUnivarHists(simulations1, simulations2, "Simulations system 1 vs system 2", "Error rate", "Demo112")
+
+                //val thresholds = (for {i <- 0 to 30 by 1} yield i/10.0).toVector
+                val binned1: Row = histogram(simulations1, 30, simulations1.min, simulations1.max).map(_._2).toVector
+                val binned2: Row = histogram(simulations2, 30, simulations2.min, simulations2.max).map(_._2).toVector
+                val thresholds: Row = histogram(simulations1, 30, simulations1.min, simulations1.max).map(_._1.toDouble).toVector
+
+                plotCCD(binned1, binned2, thresholds, None, "Demo112")
+
+                /*
                 val preds = xEval map(system1)
                 val actuals = yEval.map{case 1 => Fraudster case _ => Regular}
                 val dcfs =  actuals zip(preds) map{case(a,p) => cost(pa2,a,p)}
@@ -948,6 +993,7 @@ object Recipes extends decisions.Systems{
                 println(E_r1_check)
                 println(E_er1_check)
                 //println(dcfs.map(_.sum.toDouble / nrows))
+                */
             }
         }
        
