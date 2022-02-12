@@ -680,34 +680,43 @@ object Recipes extends decisions.Systems{
             Plotly.plot(s"$plotlyRootP/$fName-ape-compared.html", data, layout)                
         }
 
-        /** Two unidimensional histograms */
-        def plotTwoUnivarHists(observations1: Row,
-            observations2: Row,
-            title: String,
-            xtitle: String, 
+        /** Class Conditional Distribution for one recogniser. */
+        def plotSystemErrorRates(observations1: Row,
+                    observations2: Row,
+                    thresholds: Row, 
+                    barWidth: Double = 0.14,
             //vlines: Option[Seq[Segment]], 
             //confidence: Option[Segment], 
             //annotations: Option[Seq[Annotation]], 
             fName: String
         ) = {
-            val trace1 = Histogram(observations1).
-                withHistnorm(HistNorm.ProbabilityDensity).
-                withName(title).
-                withXbins(Bins(0.0,0.3,0.02))
+            val trace1 = Bar(thresholds, observations1).
+                withName("System 1"). 
+                withMarker(
+                    Marker().
+                    withColor(Color.RGB(124, 135, 146)).
+                    withOpacity(0.8)
+                ).
+                withWidth(barWidth)
 
-            val trace2 = Histogram(observations2).
-                withName(title).
-                withHistnorm(HistNorm.ProbabilityDensity).
-                withXbins(Bins(0.0,0.3,0.01))
+            val trace2 = Bar(thresholds, observations2).
+                withName("System 2").
+                withMarker(
+                    Marker().
+                    withColor(Color.RGB(6, 68, 91)).
+                    withOpacity(0.8)
+                ).
+                withWidth(barWidth)
 
             val layout = Layout().
-                    withTitle(title).
-                    withXaxis(Axis(range=(0.0,0.3),title=xtitle)).
-                    withYaxis(Axis(title="Frequency"))
-
+                    withTitle("Error rate simulations - system 1 vs system 2").
+                    withWidth(900).
+                    withHeight(700).                    
+                    withXaxis(Axis(title="Error rate",range=(0.0,0.3))).
+                    withYaxis(Axis(title=s"Frequency"))                   
 
             Plotly.plot(s"$plotlyRootP/$fName-2-histograms.html", Seq(trace1, trace2), layout)
-        }
+        }    
 
     }
 
@@ -935,7 +944,7 @@ object Recipes extends decisions.Systems{
                 val pa2 = AppParameters(0.01, 36.42006467597279, 1.0)
                 val targetTheta = -1.0
                 def getConstant(pa: AppParameters) = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
-                val cst = getConstant(pa2)                
+                val cst = getConstant(pa2)
 
                 val steppy1 = new SteppyCurve(loEval, yEval, plodds)
                 val ii = plodds.getClosestIndex(targetTheta)
@@ -946,11 +955,11 @@ object Recipes extends decisions.Systems{
                 
                 val steppy2 = new SteppyCurve(altLoEval, yEval, plodds)
                 val E_r2 = steppy2.bayesErrorRate(ii)
-                def bayesThreshold2 = getThresholder(minusθ(pa2))_
+                def bayesThreshold2 = getThresholder(cutOff)_
                 def system2 = altRecognizer andThen logit andThen bayesThreshold2
                 
                 val dataset1 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system1)
-                val simulations1 = dataset1.sample(800).map(_ / cst).toVector
+                val simulations1 = dataset1.sample(200).map(_ / cst).toVector
 
                 val vlines = Some(Seq(Segment(Point(E_r1,0),Point(E_r1,5))))
                 val interval = Some(
@@ -960,11 +969,13 @@ object Recipes extends decisions.Systems{
                 )
                 val commentary = Some(Seq(annotate(E_r1,2,1,1,f"E(r) = ${E_r1}%.1f")))
                 println(E_r1)
+                println(E_r2)
                 println(paramToθ(pa2))
+                println(cst)
                 //plotUnivarHist(simulations1,"System 1 Expected vs Actual risk","Risk",vlines,interval,None,"demo112-system1")
 
                 val dataset2 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system2)
-                val simulations2 = dataset2.sample(800).map(_ / cst).toVector
+                val simulations2 = dataset2.sample(200).map(_ / cst).toVector
                 val interval2 = Some(
                     Segment(Point(simulations2.percentile(5),0.0),
                             Point(simulations2.percentile(95),5)
@@ -974,26 +985,31 @@ object Recipes extends decisions.Systems{
 
                 //plotTwoUnivarHists(simulations1, simulations2, "Simulations system 1 vs system 2", "Error rate", "Demo112")
 
-                //val thresholds = (for {i <- 0 to 30 by 1} yield i/10.0).toVector
-                val binned1: Row = histogram(simulations1, 30, simulations1.min, simulations1.max).map(_._2).toVector
-                val binned2: Row = histogram(simulations2, 30, simulations2.min, simulations2.max).map(_._2).toVector
-                val thresholds: Row = histogram(simulations1, 30, simulations1.min, simulations1.max).map(_._1.toDouble).toVector
+                val binned1: Row = histogram(simulations1, 20, simulations1.min, simulations1.max).map(_._2).toVector
+                val binned2: Row = histogram(simulations2, 20, simulations2.min, simulations2.max).map(_._2).toVector
+                val thresholds: Row = histogram(simulations1, 20, simulations1.min, simulations1.max).map(_._1.toDouble).toVector
 
-                plotCCD(binned1, binned2, thresholds, None, "Demo112")
-
-                /*
-                val preds = xEval map(system1)
+                // plotSystemErrorRates(binned1, binned2, thresholds, 0.005, "Demo112")
                 val actuals = yEval.map{case 1 => Fraudster case _ => Regular}
-                val dcfs =  actuals zip(preds) map{case(a,p) => cost(pa2,a,p)}
-                println(cst)
-                val nrows = dcfs.size
-                val E_r1_check = dcfs.sum / dcfs.size.toDouble
-                val E_er1_check = (dcfs.sum / dcfs.size.toDouble)/cst
-                println(nrows)
-                println(E_r1_check)
-                println(E_er1_check)
-                //println(dcfs.map(_.sum.toDouble / nrows))
-                */
+
+                def checkOnEval(system: Array[Double] => User) = {
+                    val cst = getConstant(pa2) // Replace pa2 with AppParams s.t. p(w1)=0.3 and minTheta = -1
+                    val preds = xEval map(system)
+                    val dcfs =  actuals zip(preds) map{case(a,p) => cost(pa2,a,p)}
+                    val nrows = dcfs.size
+                    val E_r_check = dcfs.sum / nrows.toDouble
+                    val E_er_check = E_r_check/cst
+                    
+                    println(nrows)
+                    println(E_r_check)
+                    println(E_er_check)
+                    println("\n")
+                }
+
+                checkOnEval(system1)
+                checkOnEval(system2)
+
+
             }
         }
        
