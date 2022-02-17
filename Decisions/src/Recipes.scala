@@ -96,112 +96,41 @@ object Recipes extends decisions.Systems{
     TODO: Remove and replace with case class below
     */
     object Simulations{
-        /* Generate one dataset of transactions and return the average cost.
-        Example usage:
-        {{
-            val oneDataset = transactionsDCF(
-                1_000,
-                AppParameters(0.5,10,8),
-                transact,
-                rfClassifier,
-                dcf)
-            val allDatasets = oneDataset.sample(50)
-        }}
-
-        @param nrows the number of rows in the simulated dataset
-        @param pa the application type
-        @param transact the random variable of transactions
-        @param system a predictive pipeline that outputs the user type
-        */
-        def transactionsDCF(
-            nrows: Integer,
-            pa: AppParameters,
-            randomVariable: Distribution[Transaction],
-            system: (Array[Double] => User)
-        ): Distribution[Double] = {
-            def simulate = for {
-                    transaction <- randomVariable
-                    prediction = system(transaction.features.toArray)
-                    risk = cost(pa, transaction.UserType, prediction)
-                } yield risk
-
-            simulate.repeat(nrows).map(_.sum.toDouble / nrows)
-        }
-
+        /** Normalising constant used to go from dcf to ber */
+        def getConstant(pa: AppParameters): Double = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
+       
         /** Error rate simulations
           * 
-          * @param nsims the number of rows in the simulated dataset
+          * @param nRows the number of rows in the simulated dataset
           * @param pa the application type
-          * @param randomVariable the transactions data generation process
-          * @param system a predictive pipeline that outputs the user type
+          * @param randomVariable the transaction's data generation process
+          * @param system1 a predictive pipeline that outputs the user type
+          * @param system1 the alternative predictive pipeline
           */
-        case class Simulation(
-            nsims: Integer,
-            pa: AppParameters,
-            randomVariable: Distribution[Transaction],
-            system: (Array[Double] => User)
-        ) {
-            /** Normalisation constant to go from cost-based risk to error rate (and vice versa) */
-            val constant = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
-
-            /** Generate one transaction and calculate its DCF */
-            def dcfRV: Distribution[Double] = for {
-                transaction <- randomVariable
-                prediction = system(transaction.features.toArray)       
-            } yield cost(pa, transaction.UserType, prediction)
-
-            /** Generate one transaction and calculate its error rate */
-            def errorRateRV: Distribution[Double] = dcfRV.map(_ / constant)
-
-            /** Generate a dataset of transactions and claculate its average DCF */
-            def datasetDcfRV: Distribution[Double] = dcfRV.repeat(nsims).map(x => x.sum.toDouble / nsims)
-
-            /** Generate a dataset of transactions and calculate its average error rate */
-            def datasetErrorRateRV: Distribution[Double] = datasetDcfRV.map(_ / constant)
-
-            /** Simulate sampleSize error rates */
-            def generateData(sampleSize: Integer): Vector[Double] = datasetErrorRateRV.sample(sampleSize).toVector
-        }
-
-        def getConstant(pa: AppParameters): Double = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
-
-        def simulateErrorRate(
-            nSims: Integer,
-            pa: AppParameters,
-            randomVariable: Distribution[Transaction],
-            system: (Array[Double] => User)
-        ) = randomVariable.
-            map {transaction => {
-                val binaryPrediction = system(transaction.features.toArray)     // Generate a transaction's predicted user and 
-                val dcf = cost(pa, transaction.UserType, binaryPrediction)      // calculate its dcf
-                dcf}
-            }.
-            repeat(nSims).                                                      // Generate a dataset of dcf's
-            map {data => data.reduceLeft(_ + _) / nSims}.                       // Get the dataset average dcf
-            map {avg => avg / getConstant(pa) }                                 // Convert to a Bayes error rate
-        
-        def pairedSampleErrorRates(
-            nSims: Integer,
+        def twoSystemErrorRates(
+            nRows: Integer,
             pa: AppParameters,
             randomVariable: Distribution[Transaction],
             system1: (Array[Double] => User),
             system2: (Array[Double] => User)
-        ) = randomVariable.
+        ): Distribution[(Double,Double)] = randomVariable.
             map {transaction => {
                 val binaryPrediction1 = system1(transaction.features.toArray)     // Generate a transaction's predicted user and 
                 val dcf1 = cost(pa, transaction.UserType, binaryPrediction1)      // calculate its dcf
-                val binaryPrediction2 = system2(transaction.features.toArray)     
+                val binaryPrediction2 = system2(transaction.features.toArray)     // Same with system2
                 val dcf2 = cost(pa, transaction.UserType, binaryPrediction2)      
                 (dcf1, dcf2)}
             }.
-            repeat(nSims).                                                      // Generate a dataset of dcf's
-            map {listOfTup => listOfTup unzip match {
+            repeat(nRows).                                                        // Generate a dataset of dcf's
+            map {listOfTup => listOfTup unzip match {                             // Get the sum of dcf's
                 case (l1,l2) => (l1.sum, l2.sum)
                 }
             }.
-            map {case (sum1, sum2) => (sum1 / nSims, sum2 / nSims)
-            }.                       // Get the dataset average dcf
-            map {case (avg1, avg2) => (avg1 / getConstant(pa), (avg2 / getConstant(pa))) }                                 // Convert to a Bayes error rate
+            map {case (sum1, sum2) => (sum1 / nRows, sum2 / nRows)                // Get the average dcf
+            }.
+            map {case (avg1, avg2) => 
+                    (avg1 / getConstant(pa), (avg2 / getConstant(pa)))            // Convert to a Bayes error rate
+            }
 
     }
 
@@ -753,10 +682,10 @@ object Recipes extends decisions.Systems{
 
         /** Class Conditional Distribution for one recogniser. */
         def plotSystemErrorRates(observations1: Row,
-                    observations2: Row,
-                    thresholds: Row, 
-                    barWidth: Double = 0.14,
-            //vlines: Option[Seq[Segment]], 
+            observations2: Row,
+            thresholds: Row, 
+            barWidth: Double = 0.14,
+            vlines: Option[Seq[Segment]], 
             //confidence: Option[Segment], 
             //annotations: Option[Seq[Annotation]], 
             fName: String
@@ -779,12 +708,17 @@ object Recipes extends decisions.Systems{
                 ).
                 withWidth(barWidth)
 
+            val lin: Option[Seq[Shape]] = vlines.map(xs => 
+                xs.map{case Segment(Point(x0,y0),Point(x1,y1)) => lineShape(x0,y0,x1,y1)}
+            )
+
             val layout = Layout().
                     withTitle("Error rate simulations - system 1 vs system 2").
                     withWidth(900).
                     withHeight(700).                    
-                    withXaxis(Axis(title="Error rate",range=(0.0,0.3))).
-                    withYaxis(Axis(title=s"Frequency"))                   
+                    withXaxis(Axis(title="Error rate",range=(0.075,0.105))).
+                    withYaxis(Axis(title=s"Frequency")).
+                    withShapes(lin)
 
             Plotly.plot(s"$plotlyRootP/$fName-2-histograms.html", Seq(trace1, trace2), layout)
         }    
@@ -1013,8 +947,7 @@ object Recipes extends decisions.Systems{
             def getThresholder(cutOff: Double)(score: Double): User =
                 if (score > cutOff){Fraudster} 
                 else {Regular}                
-            // val pa2 = AppParameters(0.01, 36.42006467597279, 1.0)
-            // val pa2 = AppParameters(0.5, 1.0, 1.0)
+
             val pa2 = AppParameters(0.3, 4.94, 1.0)
             def getConstant(pa: AppParameters) = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
             val cst = getConstant(pa2)
@@ -1032,63 +965,26 @@ object Recipes extends decisions.Systems{
             def bayesThreshold2 = getThresholder(cutOff)_
             def system2 = altRecognizer andThen logit andThen bayesThreshold2
             
-            // val dataset1 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system1)
-            // val simulations1 = dataset1.sample(200).map(_ / cst).toVector
             println(targetTheta)
             println(E_r1)
             println(E_r2)
             println(cutOff)
             println(cst)
 
-            val sampleSystem1 = simulateErrorRate(5000, pa2, transact(pa2.p_w1), system1).sample(100)
-            val sampleSystem2 = simulateErrorRate(5000, pa2, transact(pa2.p_w1), system2).sample(100)
+            val (berSystem1, berSystem2) = twoSystemErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).
+                    sample(100).
+                    unzip
 
-            val pairedSamples = pairedSampleErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).sample(100)
+            val binned1: Row = histogram(berSystem1.toVector, 20, berSystem1.toVector.min, berSystem1.toVector.max).map(_._2).toVector
+            val binned2: Row = histogram(berSystem2.toVector, 20, berSystem2.toVector.min, berSystem2.toVector.max).map(_._2).toVector
+            val thresholds: Row = histogram(berSystem2.toVector, 20, berSystem2.toVector.min, berSystem2.toVector.max).map(_._1.toDouble).toVector
 
-            // val dataset2 = transactionsDCF(1_000, pa2, transact(pa2.p_w1), system2)
-            // val simulations2 = dataset2.sample(200).map(_ / cst).toVector
+            val vlines = Some(Seq(
+                Segment(Point(E_r1,0),Point(E_r1,1)),
+                Segment(Point(E_r2,0),Point(E_r2,1))
+            ))
 
-            // val binned1: Row = histogram(simulations1, 20, simulations1.min, simulations1.max).map(_._2).toVector
-            // val binned2: Row = histogram(simulations2, 20, simulations2.min, simulations2.max).map(_._2).toVector
-            // val thresholds: Row = histogram(simulations1, 20, simulations1.min, simulations1.max).map(_._1.toDouble).toVector
-
-            // plotSystemErrorRates(binned1, binned2, thresholds, 0.005, "Demo112")
-            val actuals = yEval.map{case 1 => Fraudster case _ => Regular}
-            def checkOnEval(system: Array[Double] => User) = {
-                val cst = getConstant(pa2)
-                val preds = xEval map(system)
-                val dcfs =  actuals zip(preds) map{case(a,p) => cost(pa2,a,p)}
-                val nrows = dcfs.size
-                val E_r_check = dcfs.sum / nrows.toDouble
-                val E_er_check = E_r_check/cst
-                
-                println(nrows)
-                println(E_r_check)
-                println(E_er_check)
-                println("\n")
-            }
-
-            // Can we at least get the right sign?
-            def rv = for { 
-                tr <- transact(pa2.p_w1)
-                p1=system1(tr.features.toArray)
-                p2=system2(tr.features.toArray)
-                c1=cost(pa2, tr.UserType, p1)
-                c2=cost(pa2, tr.UserType, p2)
-            } yield (c1,c2)
-
-            def mean(l: List[Double]) = l.sum / l.size.toDouble
-
-            def avDCF = rv.repeat(5000).map{ x => x.unzip }.map{case (l1, l2) => (mean(l1), mean(l2))}
-
-            def pr = avDCF.sample(100).map{case (c1,c2) => c1 < c2}.filter(x => x).size / 100.0
-
-            def run: Unit = {
-                checkOnEval(system1)
-                checkOnEval(system2)
-
-
-            }
+            def run = plotSystemErrorRates(binned1, binned2, thresholds, 0.0005, vlines, "Demo112") 
         }
        
         /** Create the data
