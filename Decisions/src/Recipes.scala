@@ -717,7 +717,7 @@ object Recipes extends decisions.Systems{
                     withWidth(900).
                     withHeight(700).                    
                     withXaxis(Axis(title="Error rate",range=(0.075,0.105))).
-                    withYaxis(Axis(title=s"Frequency")).
+                    withYaxis(Axis(title=s"Frequency",range=(0.0,0.2))).
                     withShapes(lin)
 
             Plotly.plot(s"$plotlyRootP/$fName-2-histograms.html", Seq(trace1, trace2), layout)
@@ -971,20 +971,24 @@ object Recipes extends decisions.Systems{
             println(cutOff)
             println(cst)
 
-            val (berSystem1, berSystem2) = twoSystemErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).
-                    sample(100).
-                    unzip
+            val nSamples = 200
 
-            val binned1: Row = histogram(berSystem1.toVector, 20, berSystem1.toVector.min, berSystem1.toVector.max).map(_._2).toVector
-            val binned2: Row = histogram(berSystem2.toVector, 20, berSystem2.toVector.min, berSystem2.toVector.max).map(_._2).toVector
-            val thresholds: Row = histogram(berSystem2.toVector, 20, berSystem2.toVector.min, berSystem2.toVector.max).map(_._1.toDouble).toVector
+            val (berSystem1, berSystem2) = twoSystemErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).
+                    sample(nSamples).toVector.unzip
+
+
+            val binned1 = histogram(berSystem1, 20, berSystem1.min, berSystem1.max).map(_._2).map(_ / nSamples.toDouble).toVector
+            val binned2 = histogram(berSystem2, 20, berSystem2.min, berSystem2.max).map(_._2).map(_ / nSamples.toDouble).toVector
+            val thresholds = histogram(berSystem2, 20, berSystem2.min, berSystem2.max).map(_._1.toDouble).toVector
 
             val vlines = Some(Seq(
                 Segment(Point(E_r1,0),Point(E_r1,1)),
                 Segment(Point(E_r2,0),Point(E_r2,1))
             ))
 
-            def run = plotSystemErrorRates(binned1, binned2, thresholds, 0.0005, vlines, "Demo112") 
+            def run = plotSystemErrorRates(binned1, binned2, thresholds, 0.001, vlines, "Demo112")
+
+            println(berSystem1.zip(berSystem2).filter{case (b1,b2) => b1<b2}.size / 200.0)
         }
        
         /** Create the data
