@@ -105,7 +105,7 @@ object Recipes extends decisions.Systems{
           * @param pa the application type
           * @param randomVariable the transaction's data generation process
           * @param system1 a predictive pipeline that outputs the user type
-          * @param system1 the alternative predictive pipeline
+          * @param system2 the alternative predictive pipeline
           */
         def twoSystemErrorRates(
             nRows: Integer,
@@ -976,10 +976,12 @@ object Recipes extends decisions.Systems{
             val (berSystem1, berSystem2) = twoSystemErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).
                     sample(nSamples).toVector.unzip
 
+            println(berSystem1.zip(berSystem2))
 
-            val binned1 = histogram(berSystem1, 20, berSystem1.min, berSystem1.max).map(_._2).map(_ / nSamples.toDouble).toVector
-            val binned2 = histogram(berSystem2, 20, berSystem2.min, berSystem2.max).map(_._2).map(_ / nSamples.toDouble).toVector
-            val thresholds = histogram(berSystem2, 20, berSystem2.min, berSystem2.max).map(_._1.toDouble).toVector
+
+            val binned1 = histogram(berSystem1, 15, berSystem1.min, berSystem1.max).map(_._2).map(_ / nSamples.toDouble).toVector
+            val binned2 = histogram(berSystem2, 15, berSystem2.min, berSystem2.max).map(_._2).map(_ / nSamples.toDouble).toVector
+            val thresholds = histogram(berSystem2, 15, berSystem2.min, berSystem2.max).map(_._1.toDouble).toVector
 
             val vlines = Some(Seq(
                 Segment(Point(E_r1,0),Point(E_r1,1)),
@@ -1121,7 +1123,7 @@ object Entry{
         //Demo17.run
         //Demo18.run
         // Demo110.run
-        // Demo111.run
+        Demo111.run
         Demo112.run
   }
 }
