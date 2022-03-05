@@ -721,7 +721,45 @@ object Recipes extends decisions.Systems{
                     withShapes(lin)
 
             Plotly.plot(s"$plotlyRootP/$fName-2-histograms.html", Seq(trace1, trace2), layout)
-        }    
+        }
+
+        /* Applied Probability of Error plot with all benchmarks
+         * minimum DCF, EER and majority DCF
+        */
+        def plotReliabilityDiagram(
+            accuracy1: Row,
+            accuracy2: Row,            
+            frequency: Row,
+            fName: String,
+        ): Unit = {
+
+            val rd1Trace = Scatter(frequency, accuracy1).
+                withName("Recognizer 1").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
+
+            val rd2Trace = Scatter(frequency, accuracy2).
+                withName("Recognizer 2").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5))
+
+            val perfectCalibrationTrace = Scatter(frequency, frequency).
+                withName("Pefectly calibrated recognizer").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5, dash=Dash.Dot))
+
+            val layout = Layout().
+                withTitle("Applied Probability of Error (SVM + logit)").
+                withYaxis(Axis(range=(0.0, 1.0), title="Accuracy")).
+                withXaxis(Axis(range=(0.0, 1.0), title="Frequency")).
+                withWidth(1500).
+                withHeight(600)
+
+            val data = Seq(rd1Trace, rd2Trace, perfectCalibrationTrace)
+
+            Plotly.plot(s"$plotlyRootP/$fName-ReliabilityDiagram.html", data, layout)
+
+        }        
 
     }
 
@@ -971,7 +1009,7 @@ object Recipes extends decisions.Systems{
             println(cutOff)
             println(cst)
 
-            val nSamples = 200
+            val nSamples = 300
 
             val (berSystem1, berSystem2) = twoSystemErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).
                     sample(nSamples).toVector.unzip
@@ -988,9 +1026,9 @@ object Recipes extends decisions.Systems{
                 Segment(Point(E_r2,0),Point(E_r2,1))
             ))
 
-            def run = plotSystemErrorRates(binned1, binned2, thresholds, 0.001, vlines, "Demo112")
+            def run = plotSystemErrorRates(binned1, binned2, thresholds, 0.002, vlines, "Demo112")
 
-            println(berSystem1.zip(berSystem2).filter{case (b1,b2) => b1<b2}.size / 200.0)
+            println(berSystem1.zip(berSystem2).filter{case (b1,b2) => b1<b2}.size / nSamples.toDouble)
         }
        
         /** Create the data

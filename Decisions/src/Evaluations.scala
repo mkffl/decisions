@@ -328,7 +328,7 @@ object EvalUtils{
 
 
     /* Expected Calibration Error
-        ∑_{bin1}^{binB}{ num_bins/N * abs(ac    c(b)−freq(b)) }
+        ∑_{bin1}^{binB}{ num_bins/N * abs(acc(b)−freq(b)) }
     */
     def ECE(data: Seq[Reliability]): Double = {
         val N = data.map(_.count.toDouble).sum
