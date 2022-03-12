@@ -8,7 +8,7 @@ import decisions.Shared._, LinAlg._, Stats._, FileIO._, RowLinAlg._, MatLinAlg._
 
 object TransactionsData{
     // Set a random seed for reproducibility
-    object Seed extends Distributions(new scala.util.Random(54323))
+    object Seed extends Distributions(new scala.util.Random(88888))
     /*
         f1    f2   f3   f4   f5
     array([[ 1., -1., -1., -1.,  1.], --w0

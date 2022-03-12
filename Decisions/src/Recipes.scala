@@ -92,6 +92,48 @@ object Recipes extends decisions.Systems{
         }
     }
 
+    /* Helper methods for DCF estimations
+    TODO: Remove and replace with case class below
+    */
+    object Simulations{
+        /** Normalising constant used to go from dcf to ber */
+        def getConstant(pa: AppParameters): Double = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
+       
+        /** Error rate simulations
+          * 
+          * @param nRows the number of rows in the simulated dataset
+          * @param pa the application type
+          * @param randomVariable the transaction's data generation process
+          * @param system1 a predictive pipeline that outputs the user type
+          * @param system2 the alternative predictive pipeline
+          */
+        def twoSystemErrorRates(
+            nRows: Integer,
+            pa: AppParameters,
+            randomVariable: Distribution[Transaction],
+            system1: (Array[Double] => User),
+            system2: (Array[Double] => User)
+        ): Distribution[(Double,Double)] = randomVariable.
+            map {transaction => {
+                val binaryPrediction1 = system1(transaction.features.toArray)     // Generate a transaction's predicted user and 
+                val dcf1 = cost(pa, transaction.UserType, binaryPrediction1)      // calculate its dcf
+                val binaryPrediction2 = system2(transaction.features.toArray)     // Same with system2
+                val dcf2 = cost(pa, transaction.UserType, binaryPrediction2)      
+                (dcf1, dcf2)}
+            }.
+            repeat(nRows).                                                        // Generate a dataset of dcf's
+            map {listOfTup => listOfTup unzip match {                             // Get the sum of dcf's
+                case (l1,l2) => (l1.sum, l2.sum)
+                }
+            }.
+            map {case (sum1, sum2) => (sum1 / nRows, sum2 / nRows)                // Get the average dcf
+            }.
+            map {case (avg1, avg2) => 
+                    (avg1 / getConstant(pa), (avg2 / getConstant(pa)))            // Convert to a Bayes error rate
+            }
+
+    }
+
 
     /** Plotly methods used by Demo{xy} objects to generate charts. */
     object Plots{
@@ -174,7 +216,7 @@ object Recipes extends decisions.Systems{
                     vlines: Option[Seq[Segment]],
                     fName: String,
                     featName: String = "s",
-                    barWidth: Double = 0.14
+                    barWidth: Double = 0.14,
         ) = {
             val ccdW0Trace = Bar(thresholds, w0pdf).
                 withName(s"p($featName|ω0)"). 
@@ -302,7 +344,7 @@ object Recipes extends decisions.Systems{
                 l <- lin
             } yield c ++ l
  
-            val trace = Histogram(observed, name=title, histnorm = HistNorm.ProbabilityDensity)
+            val trace = Histogram(observed, name=title, histnorm=HistNorm.ProbabilityDensity)
 
             val layout = Layout().
                     withTitle(title).
@@ -543,6 +585,182 @@ object Recipes extends decisions.Systems{
 
             Plotly.plot(s"$plotlyRootP/$fName-ROC-equal-utility.html", traces, layout)
         }
+
+        /* Applied Probability of Error plot with all benchmarks
+         * minimum DCF, EER and majority DCF
+        */
+        def plotAPE(recognizer: String,
+            plo: Row,
+            observedDCF: Row,
+            minDCF: Row,
+            eer: Double,
+            majorityDCF: Row,
+            fName: String
+        ): Unit = {
+
+            val observedDCFTrace = Scatter(plo, observedDCF).
+                withName("DCF").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
+
+            val minDCFTrace = Scatter(plo, minDCF).
+                withName("Minimum DCF").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5))
+
+            val EERTrace = Scatter(plo, plo.map(x => eer)).
+                withName("EER").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5, dash=Dash.Dot))
+
+            val majorityTrace = Scatter(plo, majorityDCF).
+                withName("Majority Classifier DCF").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5))                
+
+            val layout = Layout().
+                withTitle("Applied Probability of Error (SVM + logit)").
+                withYaxis(Axis(range=(0.0, 0.2), title="Error Probability")).
+                withXaxis(Axis(range=(-3.0, +3.0), title="Application type (θ)")).
+                withWidth(800).
+                withHeight(800)
+
+            val data = Seq(observedDCFTrace, minDCFTrace, EERTrace, majorityTrace)
+
+            Plotly.plot(s"$plotlyRootP/$fName-ape.html", data, layout)
+
+        }
+
+        /* APE with two systems and EER as the only benchmark
+        */
+        def plotAPECompare(
+            system1: String,
+            system2: String,            
+            plo: Row,
+            observedDCF1: Row,
+            observedDCF2: Row,
+            eer1: Double,
+            eer2: Double,
+            fName: String
+        ): Unit = {
+            val observedDCF1Trace = Scatter(plo,observedDCF1).
+                    withName(system1).
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
+
+            val observedDCF2Trace = Scatter(plo,observedDCF2).
+                    withName(system2).
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(6, 31, 156, 0.9), width = 2.5))
+
+            val eer1Trace = Scatter(plo,plo.map(x => eer1)).
+                    withName("EER System 1").
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width=1.5, dash=Dash.Dot))
+                    
+
+            val eer2Trace = Scatter(plo,plo.map(x => eer2)).
+                    withName("EER System 2").
+                    withMode(ScatterMode(ScatterMode.Lines)).
+                    withLine(Line(color=Color.RGBA(6, 31, 156, 0.9), width=1.5, dash=Dash.Dot))
+
+            val data = Seq(
+                observedDCF1Trace,
+                observedDCF2Trace, 
+                eer1Trace,
+                eer2Trace)
+
+            val layout = Layout().
+                withTitle(s"APE graphs for 2 systems").
+                withYaxis(Axis(range=(0.0, 0.2), title="Error Probability")).
+                withXaxis(Axis(range=(-3.0, +3.0), title="Application type (θ)")).
+                withWidth(800).
+                withHeight(800)             
+
+            Plotly.plot(s"$plotlyRootP/$fName-ape-compared.html", data, layout)                
+        }
+
+        /** Class Conditional Distribution for one recogniser. */
+        def plotSystemErrorRates(observations1: Row,
+            observations2: Row,
+            thresholds: Row, 
+            barWidth: Double = 0.14,
+            vlines: Option[Seq[Segment]], 
+            //confidence: Option[Segment], 
+            //annotations: Option[Seq[Annotation]], 
+            fName: String
+        ) = {
+            val trace1 = Bar(thresholds, observations1).
+                withName("System 1"). 
+                withMarker(
+                    Marker().
+                    withColor(Color.RGB(124, 135, 146)).
+                    withOpacity(0.8)
+                ).
+                withWidth(barWidth)
+
+            val trace2 = Bar(thresholds, observations2).
+                withName("System 2").
+                withMarker(
+                    Marker().
+                    withColor(Color.RGB(6, 68, 91)).
+                    withOpacity(0.8)
+                ).
+                withWidth(barWidth)
+
+            val lin: Option[Seq[Shape]] = vlines.map(xs => 
+                xs.map{case Segment(Point(x0,y0),Point(x1,y1)) => lineShape(x0,y0,x1,y1)}
+            )
+
+            val layout = Layout().
+                    withTitle("Error rate simulations - system 1 vs system 2").
+                    withWidth(900).
+                    withHeight(700).                    
+                    withXaxis(Axis(title="Error rate",range=(0.075,0.105))).
+                    withYaxis(Axis(title=s"Frequency",range=(0.0,0.2))).
+                    withShapes(lin)
+
+            Plotly.plot(s"$plotlyRootP/$fName-2-histograms.html", Seq(trace1, trace2), layout)
+        }
+
+        /* Applied Probability of Error plot with all benchmarks
+         * minimum DCF, EER and majority DCF
+        */
+        def plotReliabilityDiagram(
+            accuracy1: Row,
+            accuracy2: Row,            
+            frequency: Row,
+            fName: String,
+        ): Unit = {
+
+            val rd1Trace = Scatter(frequency, accuracy1).
+                withName("Recognizer 1").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(94, 30, 30, 0.9), width = 2.5))
+
+            val rd2Trace = Scatter(frequency, accuracy2).
+                withName("Recognizer 2").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5))
+
+            val perfectCalibrationTrace = Scatter(frequency, frequency).
+                withName("Pefectly calibrated recognizer").
+                withMode(ScatterMode(ScatterMode.Lines)).
+                withLine(Line(color=Color.RGBA(162, 155, 155, 0.9), width = 1.5, dash=Dash.Dot))
+
+            val layout = Layout().
+                withTitle("Applied Probability of Error (SVM + logit)").
+                withYaxis(Axis(range=(0.0, 1.0), title="Accuracy")).
+                withXaxis(Axis(range=(0.0, 1.0), title="Frequency")).
+                withWidth(1500).
+                withHeight(600)
+
+            val data = Seq(rd1Trace, rd2Trace, perfectCalibrationTrace)
+
+            Plotly.plot(s"$plotlyRootP/$fName-ReliabilityDiagram.html", data, layout)
+
+        }        
+
     }
 
     /** Data examples and analyses for parts 1 and 2 (although name suggests part 1 only). 
@@ -550,7 +768,7 @@ object Recipes extends decisions.Systems{
      *  and available to all Demos.
     */
     object Part1{
-        import Plots._, Data._, FitSystems._
+        import Plots._, Data._, FitSystems._, Simulations._
         object Demo11{
             def run = plotCCD(manybinsTo.asCCD(0),manybinsTo.asCCD(1),manybinsTo.thresholds,None,"demo11")
         }
@@ -565,10 +783,10 @@ object Recipes extends decisions.Systems{
             val vlines = Some(Seq(Segment(Point(E_r,0),Point(E_r,5))))
             val interval = Some(Segment(Point(simRisk.percentile(5),0.0),Point(simRisk.percentile(95),5)))
 
-            val commentary = Some(Seq(annotate(E_r,2,1,1,f"E(r) = ${E_r}%.1f")
-            ))            
+            val commentary = Some(Seq(annotate(E_r,2,1,1,f"E(r) = ${E_r}%.1f")))
     
             def run = plotUnivarHist(simRisk,"SVM Expected vs Actual risk","Risk",vlines,interval,commentary,"demo13")
+            throw new Exception("How can risk be above 1.0??!! Looks wrong.")
         }
 
         /** CCD,LLR and E(r) to illustrate that Bayes Decisions depdend on the chosen application parameters. */
@@ -726,10 +944,96 @@ object Recipes extends decisions.Systems{
                 )
             }            
         }
-        
+
+        object Demo110{
+            def run: Unit = {
+                val steppy = new SteppyCurve(loEval, yEval, plodds)
+                val pav = new PAV(loEval, yEval, plodds)
+
+                plotAPE(
+                    "svm",
+                    plodds,
+                    steppy.bayesErrorRate,
+                    pav.bayesErrorRate,
+                    pav.EER,
+                    steppy.majorityErrorRate,
+                    "Demo110"
+                )
+            }
+        }
+
+        object Demo111{
+            def run: Unit = {
+                val steppy1 = new SteppyCurve(loEval, yEval, plodds)
+                val pav1 = new PAV(loEval, yEval, plodds)
+                val steppy2 = new SteppyCurve(altLoEval, yEval, plodds)
+                val pav2 = new PAV(altLoEval, yEval, plodds)
+
+                plotAPECompare("SVM + logit",
+                    "Random Forest + logit",
+                    plodds,
+                    steppy1.bayesErrorRate,
+                    steppy2.bayesErrorRate,
+                    pav1.EER,
+                    pav2.EER,
+                    "Demo111"
+                )
+            }
+        }
+
+        object Demo112{
+            def getThresholder(cutOff: Double)(score: Double): User =
+                if (score > cutOff){Fraudster} 
+                else {Regular}                
+
+            val pa2 = AppParameters(0.3, 4.94, 1.0)
+            def getConstant(pa: AppParameters) = pa.p_w1*pa.Cmiss+(1-pa.p_w1)*pa.Cfa
+            val cst = getConstant(pa2)
+            
+            val targetTheta = 0.75
+            val ii = plodds.getClosestIndex(targetTheta)
+            val steppy1 = new SteppyCurve(loEval, yEval, plodds)
+            val E_r1 = steppy1.bayesErrorRate(ii)
+            val cutOff: Double = minusθ(pa2)
+            def bayesThreshold1: Double => User = getThresholder(cutOff)_
+            def system1: Array[Double] => User = recognizer andThen logit andThen bayesThreshold1
+            
+            val steppy2 = new SteppyCurve(altLoEval, yEval, plodds)
+            val E_r2 = steppy2.bayesErrorRate(ii)
+            def bayesThreshold2 = getThresholder(cutOff)_
+            def system2 = altRecognizer andThen logit andThen bayesThreshold2
+            
+            println(targetTheta)
+            println(E_r1)
+            println(E_r2)
+            println(cutOff)
+            println(cst)
+
+            val nSamples = 300
+
+            val (berSystem1, berSystem2) = twoSystemErrorRates(5000, pa2, transact(pa2.p_w1), system1, system2).
+                    sample(nSamples).toVector.unzip
+
+            println(berSystem1.zip(berSystem2))
+
+
+            val binned1 = histogram(berSystem1, 15, berSystem1.min, berSystem1.max).map(_._2).map(_ / nSamples.toDouble).toVector
+            val binned2 = histogram(berSystem2, 15, berSystem2.min, berSystem2.max).map(_._2).map(_ / nSamples.toDouble).toVector
+            val thresholds = histogram(berSystem2, 15, berSystem2.min, berSystem2.max).map(_._1.toDouble).toVector
+
+            val vlines = Some(Seq(
+                Segment(Point(E_r1,0),Point(E_r1,1)),
+                Segment(Point(E_r2,0),Point(E_r2,1))
+            ))
+
+            def run = plotSystemErrorRates(binned1, binned2, thresholds, 0.002, vlines, "Demo112")
+
+            println(berSystem1.zip(berSystem2).filter{case (b1,b2) => b1<b2}.size / nSamples.toDouble)
+        }
+       
         /** Create the data
           * Base model is an SVM, used throughout parts 1 and 2.
-          * Alternative model is random forest - non-gaussian distributions make it visually interesting.
+          * Alternative model is random forest - non-gaussian CCD make it visually interesting.
           */
 
         // Get train data, assuming balanced labels (p_w1=0.5)
@@ -739,9 +1043,11 @@ object Recipes extends decisions.Systems{
         val trainDF = trainData.toArray.asDataFrame(trainSchema, rootP)
 
         // Fit recognizers
+        // Standard recognizer is based on SVM
         val baseModel: Recognizer = SupportVectorMachine("svm", None)
         val recognizer = getRecognizer(baseModel, trainDF)
         
+        // Alternative recognizer is based on random forests
         val altModel: Recognizer = RF("rf", None)
         val altRecognizer = getRecognizer(altModel, trainDF)
 
@@ -784,6 +1090,8 @@ object Recipes extends decisions.Systems{
         val w1PavCounts = pav.targets
         val pavThresh: Row = pav.pavFit.bins.map(_.getX)
         val pavTo: Tradeoff = Tradeoff(w1PavCounts,w0PavCounts,pavThresh)
+
+        // ************* Start AUC
 
         // AUC and Risk use case (Demo17 and Demo18)
         def splitScores(data: List[Score]): Tuple2[Row,Row] = {
@@ -835,6 +1143,8 @@ object Recipes extends decisions.Systems{
 
         val hiTo = PAV2Hist(hiEval)
         val lowTo = PAV2Hist(lowEval)
+
+        // ************* End AUC
     }
 }
 
@@ -842,13 +1152,16 @@ object Entry{
     import Recipes._, Part1._
     
     def main(args: Array[String]): Unit = {
-        Demo11.run
-        Demo12.run
-        Demo13.run
-        Demo14.run
-        Demo152.run
-        Demo16.run
-        Demo17.run
-        Demo18.run
+        //Demo11.run
+        //Demo12.run
+        //Demo13.run
+        //Demo14.run
+        //Demo152.run
+        //Demo16.run
+        //Demo17.run
+        //Demo18.run
+        // Demo110.run
+        Demo111.run
+        Demo112.run
   }
 }
