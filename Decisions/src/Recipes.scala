@@ -1122,7 +1122,6 @@ object Recipes extends decisions.Systems {
         commentary,
         "demo13"
       )
-      throw new Exception("How can risk be above 1.0??!! Looks wrong.")
     }
 
     /** CCD,LLR and E(r) to illustrate that Bayes Decisions depdend on the chosen application parameters. */
@@ -1596,15 +1595,15 @@ object Entry {
   import Recipes._, Part1._
 
   def main(args: Array[String]): Unit = {
-    //Demo11.run
-    //Demo12.run
-    //Demo13.run
-    //Demo14.run
-    //Demo152.run
-    //Demo16.run
-    //Demo17.run
-    //Demo18.run
-    // Demo110.run
+    Demo11.run
+    Demo12.run
+    Demo13.run
+    Demo14.run
+    Demo152.run
+    Demo16.run
+    Demo17.run
+    Demo18.run
+    Demo110.run
     Demo111.run
     Demo112.run
   }
