@@ -1,8 +1,7 @@
-// build.sc
-import mill._, scalalib._
+import mill._, scalalib._, scalafmt._
 import coursier.maven.MavenRepository
 
-object Decisions extends ScalaModule{
+object Decisions extends ScalaModule with ScalafmtModule {
   def scalaVersion = "2.13.5"
 
   def repositories = super.repositories ++ Seq(
@@ -26,4 +25,3 @@ object Decisions extends ScalaModule{
     def testFrameworks = Seq("utest.runner.Framework")
   }
 }
-
