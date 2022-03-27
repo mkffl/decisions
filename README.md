@@ -29,6 +29,12 @@ Note: had to upgrade to latest Mill version to avoid REPL errors.
 
 mill also allows predef files to run scripts but these won't have the project modules in scope so had to copy paste.
 
+# Linting
+
+```bash
+./mill Decisions.reformat
+```
+
 # Optimisation (Apache Commons Math)
 - Univariate functions http://commons.apache.org/proper/commons-math/javadocs/api-3.6/org/apache/commons/math3/optim/univariate/UnivariateObjectiveFunction.html
 - Univariate Optimizer https://commons.apache.org/proper/commons-math/javadocs/api-3.6/org/apache/commons/math3/optim/univariate/UnivariateOptimizer.html#optimize(org.apache.commons.math3.optim.OptimizationData...)
