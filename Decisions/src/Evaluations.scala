@@ -469,7 +469,6 @@ object EvalUtils {
   def cost(p: AppParameters, actual: User, pred: User): Double = pred match {
     case Fraudster if actual == Regular => p.Cfa
     case Regular if actual == Fraudster => p.Cmiss
-    case _                              => 0.0 //TODO: remove that case
   }
 
   /*

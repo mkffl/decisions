@@ -117,7 +117,6 @@ object Recipes extends decisions.Systems {
     def getConstant(pa: AppParameters): Double =
       pa.p_w1 * pa.Cmiss + (1 - pa.p_w1) * pa.Cfa
 
-
     /** Expected risk simulation
       *
       * @param nRows the number of rows in the simulated dataset
@@ -145,9 +144,9 @@ object Recipes extends decisions.Systems {
         }
       }
       .repeat(nRows) // Generate a dataset of dcf's
-      .map { values => 
-          values.sum.toDouble / nRows // Get the average dcf
-      }      
+      .map { values =>
+        values.sum.toDouble / nRows // Get the average dcf
+      }
 
     /** Error rate simulations
       *
@@ -1547,9 +1546,10 @@ object Recipes extends decisions.Systems {
     def classifier: (Array[Double] => User) =
       recognizer andThen logit andThen thresholder
 
-    val simRisk: Row = oneClassifierExpectedRisk(1000, pa, transact(pa.p_w1), classifier)
-      .sample(500)
-      .toVector
+    val simRisk: Row =
+      oneClassifierExpectedRisk(1000, pa, transact(pa.p_w1), classifier)
+        .sample(500)
+        .toVector
 
     // Fit pav on Eval and plot LLR (Demo16)
     val pav = new PAV(loEval, yEval, plodds)
