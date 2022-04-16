@@ -109,8 +109,7 @@ object Recipes extends decisions.Systems {
     }
   }
 
-  /* Helper methods for DCF estimations
-    TODO: Remove and replace with case class below
+  /* Helper methods for DCF simulation
    */
   object Simulations {
 
@@ -118,21 +117,52 @@ object Recipes extends decisions.Systems {
     def getConstant(pa: AppParameters): Double =
       pa.p_w1 * pa.Cmiss + (1 - pa.p_w1) * pa.Cfa
 
+    /** Expected risk simulation
+      *
+      * @param nRows the number of rows in the simulated dataset
+      * @param pa the application type
+      * @param data the transaction's data generation process
+      * @param classifier a predictive pipeline that outputs the user type
+      */
+    def oneClassifierExpectedRisk(
+        nRows: Integer,
+        pa: AppParameters,
+        data: Distribution[Transaction],
+        classifier: (Array[Double] => User)
+    ): Distribution[Double] = data
+      .map { transaction =>
+        {
+          val binaryPrediction = classifier(
+            transaction.features.toArray
+          ) // Generate a transaction's predicted user and
+          val dcf = cost(
+            pa,
+            transaction.UserType,
+            binaryPrediction
+          ) // calculate its dcf
+          dcf
+        }
+      }
+      .repeat(nRows) // Generate a dataset of dcf's
+      .map { values =>
+        values.sum.toDouble / nRows // Get the average dcf
+      }
+
     /** Error rate simulations
       *
       * @param nRows the number of rows in the simulated dataset
       * @param pa the application type
-      * @param randomVariable the transaction's data generation process
+      * @param data the transaction's data generation process
       * @param system1 a predictive pipeline that outputs the user type
       * @param system2 the alternative predictive pipeline
       */
     def twoSystemErrorRates(
         nRows: Integer,
         pa: AppParameters,
-        randomVariable: Distribution[Transaction],
+        data: Distribution[Transaction],
         system1: (Array[Double] => User),
         system2: (Array[Double] => User)
-    ): Distribution[(Double, Double)] = randomVariable
+    ): Distribution[(Double, Double)] = data
       .map { transaction =>
         {
           val binaryPrediction1 = system1(
@@ -1516,15 +1546,10 @@ object Recipes extends decisions.Systems {
     def classifier: (Array[Double] => User) =
       recognizer andThen logit andThen thresholder
 
-    def simulateTransact: Distribution[Double] = for {
-      transaction <- transact(pa.p_w1)
-      prediction = classifier(transaction.features.toArray)
-      risk = cost(pa, transaction.UserType, prediction)
-    } yield risk
-
-    val simData: Distribution[Double] =
-      simulateTransact.repeat(nrows).map(_.sum.toDouble / nrows)
-    val simRisk: Row = simData.sample(nsimulations).toVector
+    val simRisk: Row =
+      oneClassifierExpectedRisk(1000, pa, transact(pa.p_w1), classifier)
+        .sample(500)
+        .toVector
 
     // Fit pav on Eval and plot LLR (Demo16)
     val pav = new PAV(loEval, yEval, plodds)
@@ -1595,16 +1620,16 @@ object Entry {
   import Recipes._, Part1._
 
   def main(args: Array[String]): Unit = {
-    Demo11.run
-    Demo12.run
+    // Demo11.run
+    // Demo12.run
     Demo13.run
-    Demo14.run
-    Demo152.run
-    Demo16.run
-    Demo17.run
-    Demo18.run
-    Demo110.run
-    Demo111.run
-    Demo112.run
+    // Demo14.run
+    // Demo152.run
+    // Demo16.run
+    // Demo17.run
+    // Demo18.run
+    // Demo110.run
+    // Demo111.run
+    // Demo112.run
   }
 }
